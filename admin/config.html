@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>价格档 / 口味标签 · 平台端</title>
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+
+  .tier-row {
+    display: flex; gap: 12px; align-items: center;
+    padding: 14px 16px; background: #FAFAFB; border-radius: var(--radius);
+    margin-bottom: 10px;
+  }
+  .tier-row__name {
+    font-size: 14px; font-weight: 500; width: 110px;
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 7px 10px;
+  }
+  .tier-row__range { display: flex; align-items: center; gap: 8px; flex: 1; }
+  .tier-row__num {
+    width: 80px; text-align: center; background: #fff;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 7px 8px; font-size: 13px;
+  }
+  .tier-row__sep { color: var(--text-3); font-size: 13px; }
+
+  .tier-preview {
+    display: inline-flex; padding: 3px 12px; border-radius: var(--radius-sm);
+    font-size: 12px; white-space: nowrap;
+  }
+
+  .tag-cloud { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .cloud-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: var(--radius-full);
+    background: var(--bg-hover); font-size: 13px; color: var(--text-1);
+  }
+  .cloud-tag__x {
+    color: var(--text-4); cursor: pointer; font-size: 14px; line-height: 1;
+  }
+  .cloud-tag__x:hover { color: var(--danger); }
+
+  .tag-add {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: var(--radius-full);
+    border: 1px dashed var(--border-strong); font-size: 13px;
+    color: var(--text-3); cursor: pointer; background: #fff;
+  }
+  .tag-add:hover { border-color: var(--brand); color: var(--brand); }
+
+  .add-tier {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 14px; border: 1px dashed var(--border-strong);
+    border-radius: var(--radius); color: var(--text-3);
+    font-size: 13px; cursor: pointer; background: #fff;
+  }
+  .add-tier:hover { border-color: var(--brand); color: var(--brand); }
+
+  .toast {
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-80px);
+    background: #1A1A1A; color: #fff; padding: 10px 20px; border-radius: var(--radius);
+    font-size: 13px; z-index: 200; opacity: 0; transition: all .3s;
+  }
+  .toast.is-show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  .impact {
+    display: flex; gap: 12px; padding: 12px;
+    background: #FFF7E6; border-radius: var(--radius); font-size: 13px;
+    color: #D46B08; line-height: 1.7; align-items: flex-start;
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar__logo"><div class="sidebar__logo-dot"></div><span>吃什么 · 平台</span></div>
+    <nav class="sidebar__nav">
+      <a class="nav-item" href="dashboard.html">数据概览</a>
+      <a class="nav-item" href="audit-shops.html">商家审核 <span class="nav-item__badge">2</span></a>
+      <a class="nav-item" href="shops.html">店铺管理</a>
+      <a class="nav-item" href="contents.html">内容管理</a>
+      <a class="nav-item" href="ranking.html">推荐排名</a>
+      <a class="nav-item" href="rules.html">发布规则</a>
+      <a class="nav-item is-active" href="config.html">价格档 / 标签</a>
+      <a class="nav-item" href="users.html">用户管理</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar__title">价格档 / 口味标签</div>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__user">
+        <div class="avatar">运</div>
+        <span style="font-size:13px">平台运营</span>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <div class="grid2">
+
+        <!-- 价格档 -->
+        <div class="card">
+          <div class="card__head">
+            <div class="card__title">价格档配置</div>
+            <div class="card__spacer"></div>
+            <button class="btn btn--sm btn--primary" onclick="saveTiers()">保存</button>
+          </div>
+          <div class="card__body">
+
+            <div class="impact mb-16">
+              <span>ⓘ</span>
+              <span>商家只填具体价格，系统按这里的区间<b>自动归档</b>，商家不可手选档位。</span>
+            </div>
+
+            <div id="tierList"></div>
+
+            <div class="add-tier" onclick="addTier()">＋ 新增档位</div>
+
+            <div class="mt-20">
+              <div class="text-13 fw-500 mb-8">客户端标签效果预览</div>
+              <div class="flex gap-8 flex-wrap" id="tierPreview"></div>
+            </div>
+
+            <div class="alert alert--warning mt-16">
+              <span>⚠️</span>
+              <span>调整档位区间后，已发布菜品的档位会<b>立即重新计算</b>。</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 口味标签 -->
+        <div class="card">
+          <div class="card__head">
+            <div class="card__title">口味标签库</div>
+            <div class="card__spacer"></div>
+            <button class="btn btn--sm btn--primary" onclick="saveTags()">保存</button>
+          </div>
+          <div class="card__body">
+
+            <div class="text-13 text-3 mb-12">
+              商家发布菜品时从这里选；客户端筛选页用同一套标签
+            </div>
+
+            <div class="tag-cloud" id="tagCloud"></div>
+
+            <div class="mt-20">
+              <div class="text-13 fw-500 mb-8">当前使用情况</div>
+              <div id="tagUsage" class="text-13" style="line-height:2.1;color:var(--text-2)"></div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 菜系分类 -->
+      <div class="card mt-20">
+        <div class="card__head">
+          <div class="card__title">菜系分类</div>
+          <div class="card__subtitle">商家入驻时选择，用于店铺归类</div>
+          <div class="card__spacer"></div>
+          <button class="btn btn--sm btn--primary" onclick="saveCuisines()">保存</button>
+        </div>
+        <div class="card__body">
+          <div class="tag-cloud" id="cuisineCloud"></div>
+          <div class="mt-16">
+            <div class="add-tier" style="max-width:200px" onclick="addCuisine()">＋ 新增菜系</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="../assets/data/mock.js"></script>
+<script src="../assets/js/api.js"></script>
+<script>
+let tiers = [];
+let tags = [];
+let cuisines = [];
+
+(function init() {
+  tiers = MOCK.priceTiers.map(t => ({ ...t, min: t.min, max: t.max }));
+  tags = [...MOCK.tasteTags];
+  cuisines = [...MOCK.cuisines];
+  renderAll();
+})();
+
+function renderAll() {
+  renderTiers();
+  renderTags();
+  renderCuisines();
+}
+
+/* ---------- 价格档 ---------- */
+function renderTiers() {
+  document.getElementById('tierList').innerHTML = tiers.map((t, i) => `
+    <div class="tier-row">
+      <input class="tier-row__name" value="${t.name}" oninput="updateTier(${i},'name',this.value)">
+      <div class="tier-row__range">
+        <input class="tier-row__num" type="number" value="${t.min}"
+               oninput="updateTier(${i},'min',this.value)">
+        <span class="tier-row__sep">—</span>
+        <input class="tier-row__num" type="number" value="${t.max === Infinity ? '' : t.max}"
+               placeholder="∞" oninput="updateTier(${i},'max',this.value)">
+      </div>
+      <span class="tier-preview tag ${MOCK.tierClass(t.id)}">${t.name}</span>
+      <span class="cloud-tag__x" onclick="delTier(${i})">×</span>
+    </div>
+  `).join('');
+
+  document.getElementById('tierPreview').innerHTML = tiers.map(t => `
+    <span class="tier-preview tag ${MOCK.tierClass(t.id)}">${t.name}</span>
+  `).join('');
+}
+
+function updateTier(i, key, val) {
+  if (key === 'name') tiers[i].name = val;
+  else tiers[i][key] = val === '' ? Infinity : Number(val);
+  renderTiers();
+  renderTierPreviewOnly();
+}
+
+function renderTierPreviewOnly() {
+  document.getElementById('tierPreview').innerHTML = tiers.map(t => `
+    <span class="tier-preview tag ${MOCK.tierClass(t.id)}">${t.name}</span>
+  `).join('');
+}
+
+function addTier() {
+  tiers.push({ id: 'tier_new' + Date.now(), name: '新档位', min: 0, max: 100 });
+  renderTiers();
+}
+
+function delTier(i) {
+  if (tiers.length <= 1) { toast('至少保留一个档位'); return; }
+  if (!confirm(`确定删除「${tiers[i].name}」档位？`)) return;
+  tiers.splice(i, 1);
+  renderTiers();
+}
+
+function saveTiers() {
+  const invalid = tiers.find(t => t.min >= t.max);
+  if (invalid) { toast(`「${invalid.name}」的区间不合法`); return; }
+
+  MOCK.priceTiers = tiers.map(t => ({ ...t }));
+
+  // 重算所有菜品的档位
+  MOCK.dishes.forEach(d => {
+    if (d.price != null) {
+      const t = MOCK.getTierByPrice(d.price);
+      d.priceTierId = t ? t.id : null;
+    }
+  });
+
+  toast('价格档已保存，菜品已重新归档');
+  track('admin_save_tiers', { tiers });
+}
+
+/* ---------- 口味标签 ---------- */
+function renderTags() {
+  document.getElementById('tagCloud').innerHTML =
+    tags.map((t, i) => `
+      <span class="cloud-tag">
+        ${t}
+        <span class="cloud-tag__x" onclick="delTag(${i})">×</span>
+      </span>`).join('') +
+    '<span class="tag-add" onclick="addTag()">＋ 新增标签</span>';
+
+  // 使用统计
+  const usage = {};
+  MOCK.dishes.forEach(d => (d.tasteTags || []).forEach(t => {
+    usage[t] = (usage[t] || 0) + 1;
+  }));
+
+  document.getElementById('tagUsage').innerHTML =
+    tags.map(t => `<div class="flex-between" style="padding:3px 0">
+      <span>${t}</span>
+      <span class="text-3">${usage[t] || 0} 道菜品使用</span>
+    </div>`).join('') || '<span class="text-3">暂无标签</span>';
+}
+
+function addTag() {
+  const v = prompt('输入新口味标签：');
+  if (!v || !v.trim()) return;
+  if (tags.includes(v.trim())) { toast('标签已存在'); return; }
+  tags.push(v.trim());
+  renderTags();
+}
+
+function delTag(i) {
+  const used = MOCK.dishes.filter(d => (d.tasteTags || []).includes(tags[i])).length;
+  const msg = used
+    ? `「${tags[i]}」已被 ${used} 道菜品使用，删除后这些菜品将失去该标签。确定？`
+    : `确定删除「${tags[i]}」？`;
+  if (!confirm(msg)) return;
+  tags.splice(i, 1);
+  renderTags();
+}
+
+function saveTags() {
+  MOCK.tasteTags = [...tags];
+  toast('口味标签已保存');
+  track('admin_save_tags', { tags });
+}
+
+/* ---------- 菜系 ---------- */
+function renderCuisines() {
+  document.getElementById('cuisineCloud').innerHTML =
+    cuisines.map((c, i) => `
+      <span class="cloud-tag">
+        ${c}
+        <span class="cloud-tag__x" onclick="delCuisine(${i})">×</span>
+      </span>`).join('');
+}
+
+function addCuisine() {
+  const v = prompt('输入新菜系：');
+  if (!v || !v.trim()) return;
+  if (cuisines.includes(v.trim())) { toast('菜系已存在'); return; }
+  cuisines.push(v.trim());
+  renderCuisines();
+}
+
+function delCuisine(i) {
+  const used = MOCK.shops.filter(s => s.cuisine === cuisines[i]).length;
+  if (used) { toast(`有 ${used} 家店铺正在使用，无法删除`); return; }
+  if (!confirm(`确定删除菜系「${cuisines[i]}」？`)) return;
+  cuisines.splice(i, 1);
+  renderCuisines();
+}
+
+function saveCuisines() {
+  MOCK.cuisines = [...cuisines];
+  toast('菜系分类已保存');
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('is-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-show'), 1900);
+}
+
+function track(event, data) { console.log('[track]', event, data); }
+</script>
+</body>
+</html>

@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>个人中心 · 吃什么</title>
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  body { background: #1A1A1A; }
+
+  .stage {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; gap: 40px; padding: 20px;
+  }
+
+  .phone {
+    width: 390px; height: 844px; background: #0D0D0D;
+    border-radius: 44px; overflow: hidden; border: 10px solid #2A2A2A;
+    position: relative; box-shadow: 0 20px 60px rgba(0,0,0,.6);
+    display: flex; flex-direction: column;
+  }
+
+  .phone__notch {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 126px; height: 28px; background: #2A2A2A;
+    border-radius: 0 0 18px 18px; z-index: 90;
+  }
+
+  .scroll { flex: 1; overflow-y: auto; scrollbar-width: none; padding-bottom: 80px; }
+  .scroll::-webkit-scrollbar { display: none; }
+
+  /* 头部 */
+  .profile-head {
+    padding: 68px 20px 24px;
+    background: linear-gradient(160deg, rgba(254,44,85,.22), transparent 70%);
+  }
+
+  .ph-row { display: flex; align-items: center; gap: 16px; }
+
+  .ph-avatar {
+    width: 68px; height: 68px; border-radius: 50%; overflow: hidden;
+    border: 2px solid rgba(255,255,255,.15); flex-shrink: 0; background: #222;
+  }
+  .ph-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+  .ph-name { font-size: 20px; font-weight: 600; color: #fff; margin-bottom: 5px; }
+  .ph-city { font-size: 12px; color: rgba(255,255,255,.5); display: flex; align-items: center; gap: 4px; }
+
+  .ph-edit {
+    margin-left: auto; font-size: 12px; color: rgba(255,255,255,.6);
+    border: 1px solid rgba(255,255,255,.2); border-radius: 20px;
+    padding: 5px 14px; cursor: pointer;
+  }
+  .ph-edit:hover { background: rgba(255,255,255,.08); }
+
+  /* 未登录提示 */
+  .login-tip {
+    padding: 68px 20px 24px; text-align: center;
+  }
+  .login-tip__avatar {
+    width: 68px; height: 68px; border-radius: 50%; background: rgba(255,255,255,.08);
+    margin: 0 auto 14px; display: flex; align-items: center; justify-content: center;
+    font-size: 28px; color: rgba(255,255,255,.4);
+  }
+  .login-tip__text { font-size: 15px; color: #fff; margin-bottom: 6px; }
+  .login-tip__sub { font-size: 12px; color: rgba(255,255,255,.4); margin-bottom: 20px; }
+
+  /* 数据行 */
+  .stat-row {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    padding: 18px 0; margin: 0 20px;
+    border-top: 1px solid rgba(255,255,255,.08);
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+
+  .sr-item { text-align: center; cursor: pointer; }
+  .sr-item:hover { opacity: .8; }
+  .sr-num { font-size: 19px; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums; }
+  .sr-label { font-size: 11px; color: rgba(255,255,255,.5); margin-top: 3px; }
+
+  /* 菜单组 */
+  .menu-group { margin: 20px 20px 0; }
+
+  .menu-group__title {
+    font-size: 12px; color: rgba(255,255,255,.35);
+    padding: 0 4px 10px;
+  }
+
+  .menu-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 15px 16px; background: #161616; cursor: pointer;
+    transition: background .15s;
+  }
+  .menu-item:first-of-type { border-radius: 14px 14px 0 0; }
+  .menu-item:last-of-type { border-radius: 0 0 14px 14px; }
+  .menu-item:only-of-type { border-radius: 14px; }
+  .menu-item:hover { background: #1E1E1E; }
+  .menu-item + .menu-item { border-top: 1px solid rgba(255,255,255,.05); }
+
+  .mi-icon {
+    width: 32px; height: 32px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; flex-shrink: 0;
+    background: rgba(255,255,255,.08);
+  }
+
+  .mi-label { flex: 1; font-size: 14px; color: #fff; }
+  .mi-count { font-size: 13px; color: rgba(255,255,255,.4); }
+  .mi-arrow { color: rgba(255,255,255,.3); font-size: 15px; }
+
+  /* 退出 */
+  .logout {
+    margin: 24px 20px 0; height: 46px; border-radius: 12px;
+    background: rgba(255,255,255,.07); color: rgba(255,255,255,.75);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; cursor: pointer;
+  }
+  .logout:hover { background: rgba(255,255,255,.12); }
+
+  /* 底部导航 */
+  .tabbar {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 68px;
+    background: rgba(13,13,13,.96); backdrop-filter: blur(20px);
+    display: flex; align-items: center; justify-content: space-around;
+    padding: 0 8px 10px; z-index: 40;
+    border-top: 1px solid rgba(255,255,255,.06);
+  }
+
+  .tb-item {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    color: rgba(255,255,255,.5); font-size: 10px; cursor: pointer;
+    padding: 6px 14px; transition: color .15s;
+  }
+  .tb-item.is-active { color: #fff; }
+  .tb-item__icon { font-size: 19px; }
+
+  /* 列表页 */
+  .list-head {
+    display: flex; align-items: center; gap: 12px;
+    padding: 58px 16px 16px; position: sticky; top: 0;
+    background: #0D0D0D; z-index: 10;
+  }
+  .list-head__back {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(255,255,255,.08); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; cursor: pointer;
+  }
+  .list-head__title { font-size: 17px; font-weight: 500; color: #fff; }
+
+  .sub-list { padding: 0 16px 100px; }
+
+  .sub-item {
+    display: flex; gap: 12px; padding: 12px; background: #161616;
+    border-radius: 14px; margin-bottom: 10px; cursor: pointer;
+  }
+  .sub-item:hover { background: #1E1E1E; }
+  .sub-item__img {
+    width: 72px; height: 94px; border-radius: 10px; overflow: hidden;
+    background: #222; flex-shrink: 0;
+  }
+  .sub-item__img img { width: 100%; height: 100%; object-fit: cover; }
+  .sub-item__name { font-size: 15px; font-weight: 500; color: #fff; margin-bottom: 4px; }
+  .sub-item__meta { font-size: 12px; color: rgba(255,255,255,.45); line-height: 1.6; }
+
+  .toast {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: rgba(0,0,0,.85); color: #fff; padding: 10px 18px;
+    border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .25s;
+    pointer-events: none; z-index: 150; white-space: nowrap;
+  }
+  .toast.is-show { opacity: 1; }
+
+  .side-note {
+    width: 300px; color: #fff; font-size: 13px; line-height: 1.9;
+    background: #1C1C1E; border-radius: 16px; padding: 22px;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+  .side-note h3 { font-size: 15px; font-weight: 500; margin-bottom: 14px; }
+  .side-note__row { display: flex; gap: 8px; margin-bottom: 10px; align-items: flex-start; }
+  .side-note__k { color: rgba(255,255,255,.5); flex-shrink: 0; width: 62px; }
+  .side-note__v { color: rgba(255,255,255,.9); flex: 1; }
+  .side-note code { background: rgba(255,255,255,.1); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .side-note hr { border: none; border-top: 1px solid rgba(255,255,255,.08); margin: 16px 0; }
+
+  @media (max-width: 820px) {
+    .stage { padding: 0; }
+    .side-note { display: none; }
+    .phone { width: 100vw; height: 100vh; border-radius: 0; border: none; }
+    .phone__notch { display: none; }
+    .profile-head, .login-tip { padding-top: 24px; }
+    .list-head { padding-top: 20px; }
+  }
+</style>
+</head>
+<body data-app="client">
+
+<div class="stage">
+  <div class="phone">
+    <div class="phone__notch"></div>
+    <div class="scroll" id="scroll"></div>
+
+    <div class="tabbar">
+      <div class="tb-item" onclick="location.href='feed.html'"><div class="tb-item__icon">⌂</div><span>首页</span></div>
+      <div class="tb-item" onclick="location.href='filter.html'"><div class="tb-item__icon">☰</div><span>分类</span></div>
+      <div class="tb-item is-active"><div class="tb-item__icon">◯</div><span>我的</span></div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <div class="side-note">
+    <h3>交互说明</h3>
+    <div class="side-note__row"><span class="side-note__k">未登录</span><span class="side-note__v">显示登录引导<br>浏览不需登录</span></div>
+    <div class="side-note__row"><span class="side-note__k">已登录</span><span class="side-note__v">头像 / 昵称 / 城市<br>四项数据统计</span></div>
+    <hr>
+    <div class="side-note__row"><span class="side-note__k">列表</span><span class="side-note__v">收藏 / 点赞 / 评论 / 浏览记录<br>点击进入二级列表</span></div>
+    <div class="side-note__row"><span class="side-note__k">无订单</span><span class="side-note__v">本产品不做交易闭环</span></div>
+    <hr>
+    <div class="text-12" style="color:rgba(255,255,255,.4)">
+      改 <code>mock.js</code> 中 <code>currentUser.loggedIn</code> 切换登录态
+    </div>
+  </div>
+</div>
+
+<script src="../assets/data/mock.js"></script>
+<script src="../assets/js/api.js"></script>
+<script>
+let view = 'main';   // main | favorites | likes | comments | history | settings
+const localState = JSON.parse(localStorage.getItem('profileState') || '{}');
+
+(function init() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('v')) view = params.get('v');
+  render();
+})();
+
+function render() {
+  const el = document.getElementById('scroll');
+  if (view === 'main') el.innerHTML = renderMain();
+  else if (view === 'settings') el.innerHTML = renderSettings();
+  else el.innerHTML = renderList(view);
+}
+
+/* ---------- 主页面 ---------- */
+function renderMain() {
+  const u = MOCK.currentUser;
+  const logged = u.loggedIn;
+
+  const head = logged ? `
+    <div class="profile-head">
+      <div class="ph-row">
+        <div class="ph-avatar"><img src="${u.avatar}"></div>
+        <div style="flex:1;min-width:0">
+          <div class="ph-name">${u.name}</div>
+          <div class="ph-city">📍 ${u.city} · ${u.district}</div>
+        </div>
+        <div class="ph-edit" onclick="go('settings')">编辑资料</div>
+      </div>
+    </div>
+  ` : `
+    <div class="login-tip">
+      <div class="login-tip__avatar">◯</div>
+      <div class="login-tip__text">还没有登录</div>
+      <div class="login-tip__sub">登录后可点赞、收藏和评论</div>
+      <button class="btn btn--lg" style="background:#FE2C55;color:#fff;width:100%"
+              onclick="toLogin()">立即登录</button>
+    </div>
+  `;
+
+  const stats = logged ? `
+    <div class="stat-row">
+      <div class="sr-item" onclick="go('favorites')">
+        <div class="sr-num">8</div><div class="sr-label">收藏</div>
+      </div>
+      <div class="sr-item" onclick="go('likes')">
+        <div class="sr-num">12</div><div class="sr-label">点赞</div>
+      </div>
+      <div class="sr-item" onclick="go('comments')">
+        <div class="sr-num">3</div><div class="sr-label">评论</div>
+      </div>
+      <div class="sr-item" onclick="go('history')">
+        <div class="sr-num" id="hisNum">0</div><div class="sr-label">浏览</div>
+      </div>
+    </div>
+  ` : '';
+
+  return head + stats + `
+    <div class="menu-group">
+      <div class="menu-group__title">我的内容</div>
+      <div class="menu-item" onclick="go('favorites')">
+        <div class="mi-icon" style="background:rgba(254,44,85,.15)">☆</div>
+        <div class="mi-label">我的收藏</div>
+        <div class="mi-count">8</div>
+        <div class="mi-arrow">›</div>
+      </div>
+      <div class="menu-item" onclick="go('likes')">
+        <div class="mi-icon" style="background:rgba(254,44,85,.15)">♥</div>
+        <div class="mi-label">我的点赞</div>
+        <div class="mi-count">12</div>
+        <div class="mi-arrow">›</div>
+      </div>
+      <div class="menu-item" onclick="go('comments')">
+        <div class="mi-icon" style="background:rgba(37,244,238,.12)">💬</div>
+        <div class="mi-label">我的评论</div>
+        <div class="mi-count">3</div>
+        <div class="mi-arrow">›</div>
+      </div>
+      <div class="menu-item" onclick="go('history')">
+        <div class="mi-icon" style="background:rgba(255,255,255,.08)">👀</div>
+        <div class="mi-label">浏览记录</div>
+        <div class="mi-count" id="hisNum2">0</div>
+        <div class="mi-arrow">›</div>
+      </div>
+    </div>
+
+    <div class="menu-group">
+      <div class="menu-group__title">设置</div>
+      <div class="menu-item" onclick="go('settings')">
+        <div class="mi-icon" style="background:rgba(255,255,255,.08)">⚙</div>
+        <div class="mi-label">资料设置</div>
+        <div class="mi-arrow">›</div>
+      </div>
+      <div class="menu-item" onclick="toast('通知设置待开发')">
+        <div class="mi-icon" style="background:rgba(255,255,255,.08)">🔔</div>
+        <div class="mi-label">消息通知</div>
+        <div class="mi-arrow">›</div>
+      </div>
+      <div class="menu-item" onclick="toast('关于：吃什么 · 本地生活 v0.1')">
+        <div class="mi-icon" style="background:rgba(255,255,255,.08)">ⓘ</div>
+        <div class="mi-label">关于我们</div>
+        <div class="mi-arrow">›</div>
+      </div>
+    </div>
+
+    <div class="logout" onclick="toLogout()">${logged ? '退出登录' : '登录 / 注册'}</div>
+  `;
+}
+
+/* ---------- 二级列表 ---------- */
+const LIST_META = {
+  favorites: { title: '我的收藏', icon: '☆' },
+  likes: { title: '我的点赞', icon: '♥' },
+  comments: { title: '我的评论', icon: '💬' },
+  history: { title: '浏览记录', icon: '👀' }
+};
+
+function renderList(type) {
+  const meta = LIST_META[type];
+
+  let items = [];
+  if (type === 'comments') {
+    items = MOCK.comments.filter(c => c.userId === MOCK.currentUser.id);
+  } else {
+    const all = MOCK.dishes.filter(d => d.status === 'normal');
+    items = type === 'history' ? all.slice(0, 4) : all.slice(0, 3);
+  }
+
+  const body = items.length ? items.map(d => {
+    if (type === 'comments') {
+      const dish = MOCK.getDish(d.dishId);
+      return `
+        <div class="sub-item" onclick="location.href='dish.html?id=${d.dishId}'">
+          <div class="sub-item__img"><img src="${dish ? dish.media[0] : ''}"></div>
+          <div style="flex:1;min-width:0">
+            <div class="sub-item__name">${dish ? dish.name : '菜品'}</div>
+            <div class="sub-item__meta">${escapeHtml(d.content)}</div>
+            <div class="sub-item__meta mt-4" style="color:rgba(255,255,255,.3)">${MOCK.timeAgo(d.at)}</div>
+          </div>
+        </div>`;
+    }
+    const tier = MOCK.priceTiers.find(t => t.id === d.priceTierId);
+    return `
+      <div class="sub-item" onclick="location.href='dish.html?id=${d.id}'">
+        <div class="sub-item__img"><img src="${d.cover || d.media[0]}"></div>
+        <div style="flex:1;min-width:0">
+          <div class="sub-item__name">${d.name}</div>
+          <div class="sub-item__meta">${d.shopName}</div>
+          <div class="sub-item__meta mt-4">
+            ${tier ? tier.name + ' · ' : ''}${MOCK.timeAgo(d.publishedAt)}
+          </div>
+        </div>
+      </div>`;
+  }).join('') : `
+    <div class="empty" style="color:rgba(255,255,255,.4);padding:60px 0">
+      <div class="empty__icon">${meta.icon}</div>
+      <div class="empty__text">还没有${meta.title.replace('我的', '')}</div>
+    </div>`;
+
+  return `
+    <div class="list-head">
+      <div class="list-head__back" onclick="go('main')">‹</div>
+      <div class="list-head__title">${meta.title}</div>
+    </div>
+    <div class="sub-list">${body}</div>
+  `;
+}
+
+/* ---------- 资料设置 ---------- */
+function renderSettings() {
+  const u = MOCK.currentUser;
+  return `
+    <div class="list-head">
+      <div class="list-head__back" onclick="go('main')">‹</div>
+      <div class="list-head__title">资料设置</div>
+    </div>
+    <div class="sub-list">
+      <div class="menu-group" style="margin:0">
+        <div class="menu-item">
+          <div class="mi-label">头像</div>
+          <div class="ph-avatar" style="width:38px;height:38px;border:none"><img src="${u.avatar}"></div>
+        </div>
+        <div class="menu-item">
+          <div class="mi-label">昵称</div>
+          <div class="mi-count" style="color:#fff">${u.name}</div>
+        </div>
+        <div class="menu-item">
+          <div class="mi-label">所在城市</div>
+          <div class="mi-count" style="color:#fff">${u.city}</div>
+        </div>
+        <div class="menu-item">
+          <div class="mi-label">所在区县</div>
+          <div class="mi-count" style="color:#fff">${u.district}</div>
+        </div>
+      </div>
+      <div class="text-12 text-center mt-20" style="color:rgba(255,255,255,.3)">
+        原型阶段为只读展示，接入后端后可编辑
+      </div>
+    </div>
+  `;
+}
+
+/* ---------- 导航 ---------- */
+function go(v) {
+  view = v;
+  document.getElementById('scroll').scrollTop = 0;
+  render();
+  if (v === 'main') updateHistoryNum();
+}
+
+function updateHistoryNum() {
+  const n = Object.keys(localState).length;
+  const a = document.getElementById('hisNum');
+  const b = document.getElementById('hisNum2');
+  if (a) a.textContent = n || 4;
+  if (b) b.textContent = n || 4;
+}
+
+function toLogin() {
+  if (confirm('这是原型演示，是否模拟登录成功？')) {
+    MOCK.currentUser.loggedIn = true;
+    render();
+    toast('已模拟登录');
+  }
+}
+
+function toLogout() {
+  if (!MOCK.currentUser.loggedIn) { toLogin(); return; }
+  if (confirm('确定退出登录？')) {
+    MOCK.currentUser.loggedIn = false;
+    render();
+    toast('已退出登录');
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, m => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[m]));
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('is-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-show'), 1600);
+}
+
+setTimeout(updateHistoryNum, 0);
+</script>
+</body>
+</html>

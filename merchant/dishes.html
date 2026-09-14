@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>菜品管理 · 商家端</title>
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  .dish-cell { display: flex; gap: 12px; align-items: center; }
+
+  .dish-cell__img {
+    width: 48px; height: 62px; border-radius: 8px; overflow: hidden;
+    background: var(--bg-hover); flex-shrink: 0; position: relative;
+  }
+  .dish-cell__img img { width: 100%; height: 100%; object-fit: cover; }
+  .dish-cell__badge {
+    position: absolute; bottom: 2px; right: 2px; font-size: 9px;
+    background: rgba(0,0,0,.6); color: #fff; padding: 0 4px; border-radius: 2px;
+  }
+
+  .dish-cell__name { font-size: 14px; font-weight: 500; margin-bottom: 3px; }
+  .dish-cell__meta { font-size: 12px; color: var(--text-3); }
+
+  .ops { display: flex; gap: 4px; }
+
+  .toast {
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-80px);
+    background: #1A1A1A; color: #fff; padding: 10px 20px; border-radius: var(--radius);
+    font-size: 13px; z-index: 200; opacity: 0; transition: all .3s;
+  }
+  .toast.is-show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  /* 编辑抽屉 */
+  .drawer-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,.4);
+    display: none; z-index: 100; justify-content: flex-end;
+  }
+  .drawer-mask.is-open { display: flex; }
+
+  .drawer {
+    width: 460px; background: #fff; height: 100%; overflow-y: auto;
+    display: flex; flex-direction: column;
+  }
+
+  .drawer__head {
+    padding: 20px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  .drawer__title { font-size: 16px; font-weight: 600; }
+  .drawer__close {
+    margin-left: auto; width: 28px; height: 28px; border-radius: 50%;
+    background: var(--bg-hover); display: flex; align-items: center;
+    justify-content: center; cursor: pointer; font-size: 16px; color: var(--text-2);
+  }
+
+  .drawer__body { padding: 24px; flex: 1; }
+
+  .drawer__foot {
+    padding: 16px 24px; border-top: 1px solid var(--border);
+    display: flex; gap: 10px; flex-shrink: 0;
+  }
+
+  .lock-tip {
+    background: #FFF7E6; color: #D46B08; font-size: 12px;
+    padding: 10px 12px; border-radius: var(--radius-sm);
+    line-height: 1.6; margin-bottom: 20px;
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar__logo"><div class="sidebar__logo-dot"></div><span>吃什么 · 商家</span></div>
+    <nav class="sidebar__nav">
+      <a class="nav-item" href="dashboard.html">工作台</a>
+      <a class="nav-item" href="publish.html">发布菜品</a>
+      <a class="nav-item is-active" href="dishes.html">菜品管理</a>
+      <a class="nav-item" href="shop-info.html">店铺信息</a>
+      <a class="nav-item" href="comments.html">评论管理</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar__title">菜品管理</div>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__user">
+        <div class="avatar">蜀</div>
+        <span style="font-size:13px">蜀香小馆</span>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="page-head__title">全部菜品</div>
+          <div class="page-head__desc">发布后永久保留在店铺页，首页只展示最新一条</div>
+        </div>
+        <div class="page-head__spacer"></div>
+        <a class="btn btn--primary" href="publish.html">＋ 发布新菜品</a>
+      </div>
+
+      <div class="card">
+        <div class="card__head">
+          <input class="input" placeholder="搜索菜品名称" style="width:220px;height:32px;font-size:13px"
+                 id="kw" oninput="render()">
+          <div class="card__spacer"></div>
+          <select class="select" style="width:120px;height:32px;font-size:13px" id="ft" onchange="render()">
+            <option value="">全部形式</option>
+            <option value="image">图文</option>
+            <option value="video">视频</option>
+          </select>
+        </div>
+
+        <table class="table">
+          <thead>
+            <tr>
+              <th>菜品</th>
+              <th style="width:90px">价格档</th>
+              <th style="width:150px">数据</th>
+              <th style="width:120px">发布时间</th>
+              <th style="width:130px">状态</th>
+              <th style="width:150px">操作</th>
+            </tr>
+          </thead>
+          <tbody id="body"></tbody>
+        </table>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- 编辑抽屉 -->
+<div class="drawer-mask" id="drawerMask" onclick="if(event.target===this)closeDrawer()">
+  <div class="drawer">
+    <div class="drawer__head">
+      <div class="drawer__title">编辑菜品</div>
+      <div class="drawer__close" onclick="closeDrawer()">×</div>
+    </div>
+    <div class="drawer__body">
+      <div class="lock-tip">
+        ⚠️ 内容形式（图文 / 视频）发布后不可更改。可修改文字、图片与价格。
+      </div>
+
+      <div class="field">
+        <div class="field__label">菜品名称</div>
+        <input class="input" id="eName" maxlength="20">
+      </div>
+
+      <div class="field">
+        <div class="field__label">简介</div>
+        <textarea class="textarea" id="eDesc" maxlength="100"></textarea>
+      </div>
+
+      <div class="field">
+        <div class="field__label">价格</div>
+        <div class="flex items-center gap-8">
+          <span>¥</span>
+          <input class="input" id="ePrice" type="number" style="max-width:140px" oninput="onPrice()">
+          <span class="tag" id="eTier"></span>
+        </div>
+        <div class="field__hint">价格档由系统按平台配置自动归档</div>
+      </div>
+
+      <div class="field" style="margin-bottom:0">
+        <div class="field__label">媒体（不可切换形式）</div>
+        <div id="eMedia" class="flex gap-8 flex-wrap"></div>
+      </div>
+    </div>
+    <div class="drawer__foot">
+      <button class="btn btn--ghost" onclick="closeDrawer()">取消</button>
+      <button class="btn btn--primary flex-1" onclick="saveDish()">保存修改</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="../assets/data/mock.js"></script>
+<script src="../assets/js/api.js"></script>
+<script>
+let shop = null;
+let editing = null;
+
+(function init() {
+  shop = MOCK.getShop(MOCK.currentMerchant.shopId);
+  render();
+})();
+
+function getList() {
+  const kw = document.getElementById('kw').value.trim();
+  const ft = document.getElementById('ft').value;
+  return MOCK.getShopDishes(shop.id)
+    .filter(d => !kw || d.name.includes(kw))
+    .filter(d => !ft || d.type === ft)
+    .sort((a, b) => new Date(b.publishedAt.replace(/-/g,'/')) - new Date(a.publishedAt.replace(/-/g,'/')));
+}
+
+function render() {
+  const list = getList();
+  const body = document.getElementById('body');
+
+  if (!list.length) {
+    body.innerHTML = '<tr><td colspan="6"><div class="empty">' +
+      '<div class="empty__icon">🍽</div><div class="empty__text">没有找到菜品</div></div></td></tr>';
+    return;
+  }
+
+  body.innerHTML = list.map(d => {
+    const tier = MOCK.priceTiers.find(t => t.id === d.priceTierId);
+    const isLatest = list[0].id === d.id;
+    return `
+    <tr>
+      <td>
+        <div class="dish-cell">
+          <div class="dish-cell__img">
+            <img src="${d.cover || d.media[0]}">
+            ${d.type === 'video' ? '<div class="dish-cell__badge">▶</div>' : ''}
+          </div>
+          <div style="min-width:0">
+            <div class="dish-cell__name">${d.name}</div>
+            <div class="dish-cell__meta truncate" style="max-width:280px">
+              ${d.desc || '未填写简介'}
+            </div>
+          </div>
+        </div>
+      </td>
+      <td>${tier ? `<span class="tag ${MOCK.tierClass(tier.id)}">${tier.name}</span>` : '—'}</td>
+      <td class="text-12 text-2">
+        ♥ ${MOCK.fmtNum(d.stats.likes)}　☆ ${MOCK.fmtNum(d.stats.favorites)}<br>
+        💬 ${MOCK.fmtNum(d.stats.comments)}　👣 ${MOCK.fmtNum(d.stats.checkins)}
+      </td>
+      <td class="text-13 text-2">${d.publishedAt}</td>
+      <td>
+        ${isLatest
+          ? '<span class="tag tag--brand">首页展示中</span>'
+          : '<span class="tag tag--neutral">店铺页保留</span>'}
+      </td>
+      <td>
+        <div class="ops">
+          <button class="btn btn--text btn--sm" onclick="openEdit('${d.id}')">编辑</button>
+          <button class="btn btn--text btn--sm" onclick="viewFront('${d.id}')">前台</button>
+          <button class="btn btn--text btn--sm" style="color:var(--danger)" onclick="delDish('${d.id}')">删除</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+/* ---------- 编辑 ---------- */
+function openEdit(id) {
+  editing = MOCK.getDish(id);
+  document.getElementById('eName').value = editing.name;
+  document.getElementById('eDesc').value = editing.desc || '';
+  document.getElementById('ePrice').value = editing.price || '';
+
+  document.getElementById('eMedia').innerHTML = editing.media.map(m => `
+    <div style="width:64px;height:84px;border-radius:8px;overflow:hidden;background:var(--bg-hover)">
+      <img src="${m}" style="width:100%;height:100%;object-fit:cover">
+    </div>`).join('') + (editing.type === 'image'
+      ? `<div style="width:64px;height:84px;border:1px dashed var(--border-strong);border-radius:8px;
+          display:flex;align-items:center;justify-content:center;color:var(--text-3);cursor:pointer"
+          onclick="toast('原型不实现真实上传')">+</div>`
+      : '');
+
+  onPrice();
+  document.getElementById('drawerMask').classList.add('is-open');
+}
+
+function closeDrawer() {
+  document.getElementById('drawerMask').classList.remove('is-open');
+  editing = null;
+}
+
+function onPrice() {
+  const p = document.getElementById('ePrice').value;
+  const tier = p ? MOCK.getTierByPrice(p) : null;
+  const el = document.getElementById('eTier');
+  if (tier) {
+    el.className = 'tag ' + MOCK.tierClass(tier.id);
+    el.textContent = tier.name;
+  } else {
+    el.className = 'tag';
+    el.textContent = '未填写';
+  }
+}
+
+function saveDish() {
+  if (!editing) return;
+  const name = document.getElementById('eName').value.trim();
+  if (!name) { toast('菜品名称不能为空'); return; }
+
+  editing.name = name;
+  editing.desc = document.getElementById('eDesc').value.trim();
+  const p = document.getElementById('ePrice').value;
+  editing.price = p ? Number(p) : null;
+  editing.priceTierId = p ? MOCK.getTierByPrice(p).id : null;
+
+  closeDrawer();
+  render();
+  toast('已保存修改');
+  track('merchant_edit_dish', { dishId: editing?.id });
+}
+
+function viewFront(id) {
+  window.open('../client/dish.html?id=' + id, '_blank');
+}
+
+function delDish(id) {
+  const d = MOCK.getDish(id);
+  if (!confirm(`确定删除「${d.name}」？删除后店铺页也不再展示。`)) return;
+  const i = MOCK.dishes.indexOf(d);
+  if (i > -1) MOCK.dishes.splice(i, 1);
+  render();
+  toast('已删除');
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('is-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-show'), 1800);
+}
+
+function track(event, data) { console.log('[track]', event, data); }
+</script>
+</body>
+</html>

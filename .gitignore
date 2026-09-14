@@ -1,0 +1,58 @@
+# ---------- 环境与凭证（最重要，绝不能提交） ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+credentials.json
+secrets.yml
+application-local.yml
+application-prod.yml
+
+# ---------- Java / Maven ----------
+server/target/
+*.class
+*.jar
+*.war
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/timing.properties
+
+# ---------- IDE ----------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*.swo
+.settings/
+.project
+.classpath
+
+# ---------- 系统 ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- 日志与临时文件 ----------
+*.log
+logs/
+*.tmp
+*.bak
+*~
+
+# ---------- 数据库本地文件 ----------
+*.db
+*.sqlite
+*.sqlite3
+server/data/
+
+# ---------- Node（如果以后加前端构建） ----------
+node_modules/
+dist/
+.cache/
+
+# ---------- WorkBuddy 本地状态 ----------
+.workbuddy/

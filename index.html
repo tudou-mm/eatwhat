@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>「吃什么」本地生活 · 原型总览</title>
+<link rel="stylesheet" href="assets/css/base.css">
+<style>
+  body { background: #F7F8FA; padding: 40px 24px; }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .brand__dot { width: 40px; height: 40px; border-radius: 12px; background: var(--brand-gradient); }
+  .brand h1 { font-size: 24px; font-weight: 600; }
+  .sub { color: var(--text-3); font-size: 14px; margin-bottom: 32px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 32px; }
+  .col-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .col-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .pg { display: block; padding: 14px 16px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; transition: all .15s; }
+  .pg:hover { border-color: var(--brand); transform: translateY(-1px); box-shadow: var(--shadow); }
+  .pg__t { font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+  .pg__d { font-size: 12px; color: var(--text-3); margin-top: 3px; }
+  .pg.is-todo { opacity: .5; cursor: not-allowed; }
+  .pg.is-todo:hover { transform: none; box-shadow: none; border-color: var(--border); }
+  .star { color: var(--brand); font-size: 12px; }
+  .sec { margin-top: 32px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="brand">
+    <div class="brand__dot"></div>
+    <h1>吃什么 · 本地生活</h1>
+  </div>
+  <p class="sub">HTML 原型 · 阶段 S1（骨架）→ S2（核心页） · 风格参考抖音</p>
+
+  <div class="grid">
+
+    <div>
+      <div class="col-title"><span class="col-dot" style="background:#185FA5"></span>客户端 client/</div>
+      <a class="pg" href="client/feed.html">
+        <div class="pg__t">首页信息流 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">双 Tab · 全屏滑动卡片 · 互动 · 店铺卡片</div>
+      </a>
+      <a class="pg is-todo">
+        <div class="pg__t">登录 / 注册</div>
+        <div class="pg__d">手机号登录</div>
+      </a>
+      <a class="pg" href="client/login.html">
+        <div class="pg__t">登录 / 注册 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">手机号 + 验证码 · 60s 倒计时</div>
+      </a>
+      <a class="pg" href="client/shop.html">
+        <div class="pg__t">店铺详情页 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">店铺信息 · 菜品列表 · 滑动打卡</div>
+      </a>
+      <a class="pg" href="client/filter.html">
+        <div class="pg__t">分类筛选页 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">价格档 + 口味 · 实时结果</div>
+      </a>
+      <a class="pg" href="client/dish.html">
+        <div class="pg__t">菜品详情 / 评论 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">多图轮播 · 互动 · 商家回评</div>
+      </a>
+      <a class="pg" href="client/profile.html">
+        <div class="pg__t">个人中心 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">收藏 · 点赞 · 评论 · 浏览记录</div>
+      </a>
+    </div>
+
+    <div>
+      <div class="col-title"><span class="col-dot" style="background:#854F0B"></span>商家端 merchant/</div>
+      <a class="pg" href="merchant/login.html">
+        <div class="pg__t">登录 / 注册 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">登录 / 入驻双 Tab</div>
+      </a>
+      <a class="pg" href="merchant/apply.html">
+        <div class="pg__t">入驻填资料 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">门店 / 门头 / 地图选点</div>
+      </a>
+      <a class="pg" href="merchant/audit.html">
+        <div class="pg__t">审核状态页 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">待审 / 通过 / 驳回（可切换）</div>
+      </a>
+      <a class="pg" href="merchant/dashboard.html">
+        <div class="pg__t">工作台 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">今日状态 · 冷却倒计时 · 数据</div>
+      </a>
+      <a class="pg" href="merchant/publish.html">
+        <div class="pg__t">发布菜品 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">四步表单 · 图文/视频 · 实时预览</div>
+      </a>
+      <a class="pg" href="merchant/dishes.html">
+        <div class="pg__t">菜品管理 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">列表 · 编辑抽屉 · 数据</div>
+      </a>
+      <a class="pg" href="merchant/shop-info.html">
+        <div class="pg__t">店铺信息管理 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">资质维护 · 敏感项需重审</div>
+      </a>
+      <a class="pg" href="merchant/comments.html">
+        <div class="pg__t">评论管理 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">回评 · 筛选 · 举报</div>
+      </a>
+    </div>
+
+    <div>
+      <div class="col-title"><span class="col-dot" style="background:#534AB7"></span>平台端 admin/</div>
+      <a class="pg" href="admin/dashboard.html">
+        <div class="pg__t">数据概览 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">KPI · 近 7 日趋势 · 待办</div>
+      </a>
+      <a class="pg" href="admin/ranking.html">
+        <div class="pg__t">推荐排名管理 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">拖拽 · 置顶 · 权重 · 实时预览</div>
+      </a>
+      <a class="pg" href="admin/rules.html">
+        <div class="pg__t">发布规则配置 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">全局默认 · 单店覆盖</div>
+      </a>
+      <a class="pg" href="admin/audit-shops.html">
+        <div class="pg__t">商家审核 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">三态列表 · 通过 / 驳回</div>
+      </a>
+      <a class="pg" href="admin/shops.html">
+        <div class="pg__t">店铺管理 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">禁言 · 封店 · 单店规则</div>
+      </a>
+      <a class="pg" href="admin/contents.html">
+        <div class="pg__t">内容管理 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">下架 · 打标签 · 举报处理</div>
+      </a>
+      <a class="pg" href="admin/config.html">
+        <div class="pg__t">价格档 / 口味标签 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">价格档 · 口味 · 菜系</div>
+      </a>
+      <a class="pg" href="admin/users.html">
+        <div class="pg__t">用户管理 <span class="star">✓ 已完成</span></div>
+        <div class="pg__d">警告 · 限评 · 封号</div>
+      </a>
+    </div>
+
+  </div>
+
+  <div class="sec">
+    <div class="col-title"><span class="col-dot" style="background:#2E7D32"></span>后端 server/ · Spring Boot 3.2</div>
+    <div class="pg">
+      <div class="pg__t">Java 后端工程 <span class="star">✓ 已完成（未编译验证）</span></div>
+      <div class="pg__d">
+        28 个 Java 文件 · 4 个 Controller · 6 个 Service · 6 张表 ·
+        默认 H2 免安装启动：<code>cd server &amp;&amp; mvn spring-boot:run</code>
+      </div>
+    </div>
+    <div class="pg">
+      <div class="pg__t">前端适配层 assets/js/api.js <span class="star">✓ 已注入 22 页</span></div>
+      <div class="pg__d">
+        三端页面零改动接后端。切换：控制台执行
+        <code>localStorage.setItem('useApi','1');location.reload()</code>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="col-title">设计文档 docs/</div>
+    <a class="pg" href="docs/00-项目重建规格书.md">
+      <div class="pg__t">00 · 项目重建规格书 <span class="star">★ 换机必读</span></div>
+      <div class="pg__d">凭此一份文件即可完整重建整个原型工程</div>
+    </a>
+    <a class="pg" href="docs/05-后端接口契约.md">
+      <div class="pg__t">05 · 后端接口契约 <span class="star">★ 后端施工图</span></div>
+      <div class="pg__d">全部 REST 接口 · 字段 · 校验规则 · 前端接法</div>
+    </a>
+    <a class="pg" href="docs/01-需求确认清单.md">
+      <div class="pg__t">01 · 需求确认清单</div>
+      <div class="pg__d">23 项决策逐条冻结，可作验收标准</div>
+    </a>
+    <a class="pg" href="docs/02-页面地图与流程图.md">
+      <div class="pg__t">02 · 页面地图与流程图</div>
+      <div class="pg__d">三端页面清单 + 6 条核心流程 + 状态机</div>
+    </a>
+    <a class="pg" href="docs/03-页面级详细设计.md">
+      <div class="pg__t">03 · 页面级详细设计</div>
+      <div class="pg__d">区块 · 字段 · 交互 · 校验规则</div>
+    </a>
+    <a class="pg" href="docs/04-开发路线规划与建议.md">
+      <div class="pg__t">04 · 开发路线规划与建议</div>
+      <div class="pg__d">S0-S5 阶段 + 技术选型 + 10 条补充建议</div>
+    </a>
+  </div>
+
+</div>
+</body>
+</html>

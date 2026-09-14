@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>提交店铺资料 · 商家入驻</title>
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  body { background: var(--bg-page); }
+
+  .wrap { max-width: 720px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+  .brand__dot { width: 30px; height: 30px; border-radius: 9px; background: var(--brand-gradient); }
+  .brand__name { font-size: 15px; font-weight: 600; }
+
+  .steps2 { display: flex; align-items: center; margin-bottom: 28px; }
+  .s2 {
+    display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-3);
+  }
+  .s2__num {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--bg-hover);
+    display: flex; align-items: center; justify-content: center; font-size: 11px;
+  }
+  .s2.is-active { color: var(--text-1); font-weight: 500; }
+  .s2.is-active .s2__num { background: var(--brand); color: #fff; }
+  .s2.is-done .s2__num { background: var(--success); color: #fff; }
+  .s2__line { flex: 1; height: 1px; background: var(--border); margin: 0 14px; }
+
+  .map-box {
+    height: 220px; border-radius: var(--radius); overflow: hidden;
+    background: #E8EEF4; position: relative; margin-top: 8px;
+    background-image:
+      linear-gradient(rgba(0,0,0,.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,0,0,.045) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+  .map-pin {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%);
+    font-size: 26px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.3));
+  }
+  .map-hint {
+    position: absolute; bottom: 12px; left: 12px;
+    background: rgba(255,255,255,.95); padding: 8px 12px; border-radius: 8px;
+    font-size: 12px; color: var(--text-2); box-shadow: var(--shadow-sm);
+  }
+  .map-btn {
+    position: absolute; top: 12px; right: 12px;
+    background: #fff; padding: 7px 14px; border-radius: 8px;
+    font-size: 12px; box-shadow: var(--shadow-sm); cursor: pointer;
+  }
+  .map-btn:hover { background: #F7F8FA; }
+
+  .upload-photo {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;
+  }
+  .up-ph {
+    aspect-ratio: 1; border-radius: var(--radius-sm); overflow: hidden;
+    background: var(--bg-hover); position: relative;
+  }
+  .up-ph img { width: 100%; height: 100%; object-fit: cover; }
+  .up-ph__del {
+    position: absolute; top: 4px; right: 4px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: rgba(0,0,0,.55); color: #fff; font-size: 11px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .up-ph-add {
+    aspect-ratio: 1; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; color: var(--text-3); cursor: pointer; background: #fff;
+  }
+  .up-ph-add:hover { border-color: var(--brand); color: var(--brand); }
+
+  .cover-up {
+    width: 140px; height: 105px; border: 1px dashed var(--border-strong);
+    border-radius: var(--radius); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 5px;
+    color: var(--text-3); cursor: pointer; background: #fff; overflow: hidden;
+    position: relative;
+  }
+  .cover-up:hover { border-color: var(--brand); color: var(--brand); }
+  .cover-up img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+  .toast {
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-80px);
+    background: #1A1A1A; color: #fff; padding: 10px 20px; border-radius: var(--radius);
+    font-size: 13px; z-index: 200; opacity: 0; transition: all .3s;
+  }
+  .toast.is-show { transform: translateX(-50%) translateY(0); opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="brand">
+    <div class="brand__dot"></div>
+    <div class="brand__name">吃什么 · 商家入驻</div>
+  </div>
+
+  <div class="steps2 mb-20">
+    <div class="s2 is-done"><div class="s2__num">✓</div><span>账号信息</span></div>
+    <div class="s2__line"></div>
+    <div class="s2 is-active"><div class="s2__num">2</div><span>店铺资料</span></div>
+    <div class="s2__line"></div>
+    <div class="s2"><div class="s2__num">3</div><span>等待审核</span></div>
+  </div>
+
+  <div class="card mb-16">
+    <div class="card__head">
+      <div class="card__title">基本信息</div>
+    </div>
+    <div class="card__body">
+      <div class="field">
+        <div class="field__label">店铺名称 <span class="field__required">*</span></div>
+        <input class="input" id="fName" placeholder="例如：蜀香小馆" maxlength="30">
+        <div class="field__hint">将展示在客户端，建议用真实店名</div>
+      </div>
+
+      <div class="field">
+        <div class="field__label">菜系分类 <span class="field__required">*</span></div>
+        <select class="select" id="fCuisine"></select>
+      </div>
+
+      <div class="field" style="margin-bottom:0">
+        <div class="field__label">店铺简介 <span class="text-3 text-12" style="font-weight:400">（选填）</span></div>
+        <textarea class="textarea" id="fIntro" maxlength="200"
+                  placeholder="开店的年头、拿手菜、特色……"></textarea>
+        <div class="char-count" id="introCount">0 / 200</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-16">
+    <div class="card__head">
+      <div class="card__title">门头与图片</div>
+    </div>
+    <div class="card__body">
+      <div class="field">
+        <div class="field__label">门头图 <span class="field__required">*</span></div>
+        <div class="cover-up" id="coverUp" onclick="addCover()">
+          <div style="font-size:20px">⬆</div>
+          <div class="text-12">上传门头照</div>
+        </div>
+        <div class="field__hint">建议横图，展示店铺外观，客户端头图会用到</div>
+      </div>
+
+      <div class="field" style="margin-bottom:0">
+        <div class="field__label">店铺照片 <span class="text-3 text-12" style="font-weight:400">（选填，最多 6 张）</span></div>
+        <div class="upload-photo" id="photoGrid">
+          <div class="up-ph-add" onclick="addPhoto()">
+            <div style="font-size:18px">+</div>
+            <div class="text-12">添加</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-16">
+    <div class="card__head">
+      <div class="card__title">地址与联系</div>
+    </div>
+    <div class="card__body">
+      <div class="field">
+        <div class="field__label">店铺地址 <span class="field__required">*</span></div>
+        <div class="flex gap-8">
+          <input class="input" id="fAddr" placeholder="点击右侧地图选点，自动填充" readonly>
+          <button class="btn btn--outline" style="flex-shrink:0" onclick="pickMap()">地图选点</button>
+        </div>
+        <div class="map-box">
+          <div class="map-pin">📍</div>
+          <div class="map-btn" onclick="pickMap()">重新选点</div>
+          <div class="map-hint">示例位置：成都市武侯区</div>
+        </div>
+        <div class="field__hint">经纬度将用于计算用户距离，影响附近推荐排序</div>
+      </div>
+
+      <div class="field">
+        <div class="field__label">联系电话 <span class="field__required">*</span></div>
+        <input class="input" id="fPhone" placeholder="座机或手机号" maxlength="20">
+      </div>
+
+      <div class="field" style="margin-bottom:0">
+        <div class="field__label">营业时间 <span class="field__required">*</span></div>
+        <div class="flex items-center gap-8">
+          <input class="input" id="fOpen" placeholder="10:00" style="max-width:120px">
+          <span class="text-3">至</span>
+          <input class="input" id="fClose" placeholder="22:00" style="max-width:120px">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="alert alert--info mb-20">
+    <span>ⓘ</span>
+    <span>提交后由平台审核。审核通过前无法发布菜品，通常 1 个工作日内完成。</span>
+  </div>
+
+  <div class="flex gap-12">
+    <button class="btn btn--ghost btn--lg" onclick="location.href='login.html'">返回</button>
+    <button class="btn btn--primary btn--lg flex-1" onclick="submitApply()">提交审核</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="../assets/data/mock.js"></script>
+<script src="../assets/js/api.js"></script>
+<script>
+let coverImg = null;
+let photos = [];
+
+(function init() {
+  document.getElementById('fCuisine').innerHTML =
+    '<option value="">请选择</option>' +
+    MOCK.cuisines.map(c => `<option>${c}</option>`).join('');
+
+  document.getElementById('fIntro').addEventListener('input', e => {
+    document.getElementById('introCount').textContent = e.target.value.length + ' / 200';
+  });
+})();
+
+function addCover() {
+  coverImg = 'https://picsum.photos/seed/newcover' + Date.now() + '/400/300';
+  const el = document.getElementById('coverUp');
+  el.innerHTML = `<img src="${coverImg}"><div class="up-ph__del" onclick="event.stopPropagation();removeCover()">×</div>`;
+}
+
+function removeCover() {
+  coverImg = null;
+  document.getElementById('coverUp').innerHTML =
+    '<div style="font-size:20px">⬆</div><div class="text-12">上传门头照</div>';
+}
+
+function addPhoto() {
+  if (photos.length >= 6) { toast('最多 6 张'); return; }
+  photos.push('https://picsum.photos/seed/newph' + Date.now() + Math.random().toString(36).slice(2,5) + '/300/300');
+  renderPhotos();
+}
+
+function renderPhotos() {
+  const grid = document.getElementById('photoGrid');
+  let html = photos.map((p, i) => `
+    <div class="up-ph">
+      <img src="${p}">
+      <div class="up-ph__del" onclick="delPhoto(${i})">×</div>
+    </div>`).join('');
+  if (photos.length < 6) {
+    html += `<div class="up-ph-add" onclick="addPhoto()">
+      <div style="font-size:18px">+</div><div class="text-12">添加</div></div>`;
+  }
+  grid.innerHTML = html;
+}
+
+function delPhoto(i) {
+  photos.splice(i, 1);
+  renderPhotos();
+}
+
+function pickMap() {
+  document.getElementById('fAddr').value = '成都市武侯区锦绣路 88 号';
+  toast('已选点：锦绣路 88 号（原型模拟）');
+}
+
+function submitApply() {
+  const name = document.getElementById('fName').value.trim();
+  const cuisine = document.getElementById('fCuisine').value;
+  const addr = document.getElementById('fAddr').value.trim();
+  const phone = document.getElementById('fPhone').value.trim();
+  const open = document.getElementById('fOpen').value.trim();
+  const close = document.getElementById('fClose').value.trim();
+
+  if (!name) { toast('请填写店铺名称'); return; }
+  if (!cuisine) { toast('请选择菜系分类'); return; }
+  if (!coverImg) { toast('请上传门头图'); return; }
+  if (!addr) { toast('请在地图上选点'); return; }
+  if (!phone) { toast('请填写联系电话'); return; }
+  if (!open || !close) { toast('请填写营业时间'); return; }
+
+  const applying = {
+    id: 'p_new',
+    name: name,
+    logo: coverImg,
+    cover: coverImg,
+    address: addr,
+    city: '成都市',
+    district: '武侯区',
+    phone: phone,
+    hours: open + ' - ' + close,
+    cuisine: cuisine,
+    intro: document.getElementById('fIntro').value.trim(),
+    submittedAt: new Date().toLocaleString('zh-CN'),
+    photos: photos,
+    status: 'pending'
+  };
+
+  sessionStorage.setItem('applying', JSON.stringify(applying));
+  location.href = 'audit.html';
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('is-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-show'), 1800);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+server.port=8080
+
+# ===== 默认使用 H2 内存库，免安装直接跑 =====
+spring.datasource.url=jdbc:h2:mem:eatwhat;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+spring.datasource.driver-class-name=org.h2.Driver
+spring.datasource.username=sa
+spring.datasource.password=
+
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=false
+spring.jpa.open-in-view=false
+spring.jpa.properties.hibernate.format_sql=false
+
+# H2 控制台：http://localhost:8080/h2-console
+spring.h2.console.enabled=true
+spring.h2.console.path=/h2-console
+
+# 首次启动灌演示数据
+eatwhat.seed=true
+
+logging.level.root=INFO
+logging.level.com.eatwhat=DEBUG

@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>评论管理 · 商家端</title>
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  .filters { display: flex; gap: 8px; }
+
+  .f-chip {
+    padding: 6px 16px; border-radius: var(--radius-full); font-size: 13px;
+    background: var(--bg-hover); color: var(--text-2); cursor: pointer;
+    transition: all .15s;
+  }
+  .f-chip:hover { background: #E8E9EB; }
+  .f-chip.is-on { background: #FFF0F3; color: var(--brand); font-weight: 500; }
+
+  .cm-row { display: flex; gap: 12px; padding: 18px 0; border-bottom: 1px solid var(--border); }
+  .cm-row:last-child { border-bottom: none; }
+
+  .cm-av {
+    width: 38px; height: 38px; border-radius: 50%; overflow: hidden;
+    background: var(--bg-hover); flex-shrink: 0;
+  }
+  .cm-av img { width: 100%; height: 100%; object-fit: cover; }
+
+  .cm-main { flex: 1; min-width: 0; }
+  .cm-user { font-size: 13px; color: var(--text-2); margin-bottom: 5px; display: flex; align-items: center; gap: 8px; }
+  .cm-text { font-size: 14px; line-height: 1.65; margin-bottom: 8px; }
+
+  .cm-meta { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--text-4); }
+
+  .cm-dish {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--bg-hover); padding: 3px 9px; border-radius: var(--radius-sm);
+  }
+  .cm-dish img { width: 18px; height: 22px; border-radius: 3px; object-fit: cover; }
+
+  .cm-ops { display: flex; gap: 6px; margin-left: auto; }
+
+  .reply-box {
+    background: #FAFAFB; border-radius: var(--radius); padding: 12px 14px;
+    margin-top: 10px; position: relative;
+  }
+  .reply-box__tag { font-size: 11px; color: var(--brand); font-weight: 500; margin-bottom: 5px; }
+  .reply-box__text { font-size: 13px; color: var(--text-2); line-height: 1.6; }
+  .reply-box__time { font-size: 11px; color: var(--text-4); margin-top: 5px; }
+
+  .reply-form { margin-top: 12px; display: none; }
+  .reply-form.is-open { display: block; }
+  .reply-form .flex { gap: 8px; }
+
+  .toast {
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-80px);
+    background: #1A1A1A; color: #fff; padding: 10px 20px; border-radius: var(--radius);
+    font-size: 13px; z-index: 200; opacity: 0; transition: all .3s;
+  }
+  .toast.is-show { transform: translateX(-50%) translateY(0); opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar__logo"><div class="sidebar__logo-dot"></div><span>吃什么 · 商家</span></div>
+    <nav class="sidebar__nav">
+      <a class="nav-item" href="dashboard.html">工作台</a>
+      <a class="nav-item" href="publish.html">发布菜品</a>
+      <a class="nav-item" href="dishes.html">菜品管理</a>
+      <a class="nav-item" href="shop-info.html">店铺信息</a>
+      <a class="nav-item is-active" href="comments.html">评论管理</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar__title">评论管理</div>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__user">
+        <div class="avatar">蜀</div>
+        <span style="font-size:13px">蜀香小馆</span>
+      </div>
+    </header>
+
+    <div class="content" style="max-width:860px">
+
+      <div class="page-head">
+        <div>
+          <div class="page-head__title">用户评论</div>
+          <div class="page-head__desc">及时回复能提升用户好感，但恶意差评请向平台举报</div>
+        </div>
+        <div class="page-head__spacer"></div>
+        <div class="filters">
+          <div class="f-chip is-on" data-f="all" onclick="setFilter('all', this)">全部</div>
+          <div class="f-chip" data-f="unreplied" onclick="setFilter('unreplied', this)">未回复</div>
+          <div class="f-chip" data-f="replied" onclick="setFilter('replied', this)">已回复</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card__body" id="list" style="padding-top:6px;padding-bottom:6px"></div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="../assets/data/mock.js"></script>
+<script src="../assets/js/api.js"></script>
+<script>
+let shop = null;
+let filter = 'all';
+let replying = null;
+
+(function init() {
+  shop = MOCK.getShop(MOCK.currentMerchant.shopId);
+  render();
+})();
+
+function getList() {
+  // 本店所有菜品的评论
+  const dishIds = MOCK.getShopDishes(shop.id).map(d => d.id);
+  let list = MOCK.comments.filter(c => dishIds.includes(c.dishId));
+
+  // 原型补充：mock 中本店只有一条评论，补几条演示
+  if (list.length < 3) {
+    const extras = MOCK.comments.filter(c => c.dishId === 'd_002').map(c => ({
+      ...c, id: c.id + '_x', dishId: dishIds[0] || 'd_001'
+    }));
+    list = list.concat(extras.slice(0, 2));
+  }
+
+  if (filter === 'unreplied') list = list.filter(c => !c.reply);
+  if (filter === 'replied') list = list.filter(c => c.reply);
+
+  return list;
+}
+
+function setFilter(f, el) {
+  filter = f;
+  document.querySelectorAll('.f-chip').forEach(c => c.classList.toggle('is-on', c === el));
+  render();
+}
+
+function render() {
+  const list = getList();
+  const el = document.getElementById('list');
+
+  if (!list.length) {
+    const t = filter === 'unreplied' ? '没有待回复的评论' : '暂无评论';
+    el.innerHTML = `<div class="empty"><div class="empty__icon">💬</div>
+      <div class="empty__text">${t}</div>
+      <div class="empty__hint">${filter === 'unreplied' ? '全部回复完啦' : '等用户来评论吧'}</div></div>`;
+    return;
+  }
+
+  el.innerHTML = list.map(c => {
+    const dish = MOCK.getDish(c.dishId);
+    return `
+    <div class="cm-row">
+      <div class="cm-av"><img src="${c.avatar}"></div>
+      <div class="cm-main">
+        <div class="cm-user">
+          ${c.userName}
+          ${c.reply ? '<span class="tag tag--success">已回复</span>' : '<span class="tag tag--warning">待回复</span>'}
+        </div>
+        <div class="cm-text">${escapeHtml(c.content)}</div>
+
+        <div class="cm-meta">
+          <span class="cm-dish">
+            ${dish ? `<img src="${dish.cover || dish.media[0]}">${dish.name}` : '菜品'}
+          </span>
+          <span>${MOCK.timeAgo(c.at)}</span>
+          <div class="cm-ops">
+            <button class="btn btn--text btn--sm" onclick="openReply('${c.id}')">
+              ${c.reply ? '修改回复' : '回复'}
+            </button>
+            <button class="btn btn--text btn--sm" style="color:var(--danger)" onclick="reportIt('${c.id}')">
+              举报
+            </button>
+          </div>
+        </div>
+
+        ${c.reply ? `
+          <div class="reply-box">
+            <div class="reply-box__tag">🏪 商家回复</div>
+            <div class="reply-box__text">${escapeHtml(c.reply.content)}</div>
+            <div class="reply-box__time">${MOCK.timeAgo(c.reply.at)}</div>
+          </div>
+        ` : ''}
+
+        <div class="reply-form ${replying === c.id ? 'is-open' : ''}" id="rf_${c.id}">
+          <textarea class="textarea" id="ri_${c.id}" maxlength="200"
+                    placeholder="回复用户，真诚一点效果更好…"
+                    style="min-height:72px">${c.reply ? escapeHtml(c.reply.content) : ''}</textarea>
+          <div class="flex mt-8">
+            <button class="btn btn--ghost btn--sm" onclick="cancelReply('${c.id}')">取消</button>
+            <button class="btn btn--primary btn--sm" onclick="sendReply('${c.id}')">发布回复</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // 自动聚焦
+  if (replying) {
+    const ta = document.getElementById('ri_' + replying);
+    if (ta) ta.focus();
+  }
+}
+
+function openReply(id) {
+  replying = replying === id ? null : id;
+  render();
+}
+
+function cancelReply(id) {
+  replying = null;
+  render();
+}
+
+function sendReply(id) {
+  const ta = document.getElementById('ri_' + id);
+  const v = ta.value.trim();
+  if (!v) { toast('回复内容不能为空'); return; }
+
+  const c = MOCK.comments.find(x => x.id === id);
+  if (!c) { toast('评论不存在'); return; }
+
+  c.reply = { content: v, at: fmtNow() };
+  replying = null;
+  render();
+  toast('回复已发布');
+  track('merchant_reply', { commentId: id });
+}
+
+function reportIt(id) {
+  if (!confirm('确定向平台举报这条评论？平台会介入核实。')) return;
+  toast('已提交举报，平台将在 1 个工作日内处理');
+  track('merchant_report_comment', { commentId: id });
+}
+
+function fmtNow() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, m => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[m]));
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('is-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-show'), 1800);
+}
+
+function track(event, data) { console.log('[track]', event, data); }
+</script>
+</body>
+</html>

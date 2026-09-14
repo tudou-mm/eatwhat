@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>店铺详情 · 吃什么</title>
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  body { background: #1A1A1A; }
+
+  .stage {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; gap: 40px; padding: 20px;
+  }
+
+  .phone {
+    width: 390px; height: 844px; background: #0D0D0D;
+    border-radius: 44px; overflow: hidden; border: 10px solid #2A2A2A;
+    position: relative; box-shadow: 0 20px 60px rgba(0,0,0,.6);
+    display: flex; flex-direction: column;
+  }
+
+  .phone__notch {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 126px; height: 28px; background: #2A2A2A;
+    border-radius: 0 0 18px 18px; z-index: 90;
+  }
+
+  .scroll { flex: 1; overflow-y: auto; scrollbar-width: none; }
+  .scroll::-webkit-scrollbar { display: none; }
+
+  /* 顶部返回 */
+  .nav-back {
+    position: absolute; top: 52px; left: 16px; z-index: 80;
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(0,0,0,.45); backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 17px; cursor: pointer;
+  }
+
+  /* 头图 */
+  .hero { position: relative; height: 240px; flex-shrink: 0; }
+  .hero img { width: 100%; height: 100%; object-fit: cover; }
+  .hero__shade {
+    position: absolute; inset: 0;
+    background: linear-gradient(to bottom, rgba(0,0,0,.5), transparent 40%, rgba(13,13,13,.9) 100%);
+  }
+
+  /* 店铺信息 */
+  .shop-info { padding: 0 16px; margin-top: -56px; position: relative; z-index: 5; }
+
+  .shop-head { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 14px; }
+
+  .shop-logo {
+    width: 72px; height: 72px; border-radius: 16px; overflow: hidden;
+    border: 2px solid #0D0D0D; background: #222; flex-shrink: 0;
+  }
+  .shop-logo img { width: 100%; height: 100%; object-fit: cover; }
+
+  .shop-name { font-size: 20px; font-weight: 600; color: #fff; margin-bottom: 6px; }
+
+  .shop-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .s-tag {
+    font-size: 11px; padding: 2px 8px; border-radius: 4px;
+    background: rgba(255,255,255,.12); color: rgba(255,255,255,.85);
+  }
+  .s-tag--cuisine { background: rgba(254,44,85,.85); color: #fff; }
+
+  .shop-intro {
+    font-size: 13px; color: rgba(255,255,255,.6); line-height: 1.7;
+    padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+
+  /* 操作按钮组 */
+  .shop-acts {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    padding: 16px 0; border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+
+  .sa-btn {
+    height: 42px; border-radius: 10px; font-size: 13px;
+    background: rgba(255,255,255,.1); color: #fff;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    transition: background .15s; cursor: pointer;
+  }
+  .sa-btn:hover { background: rgba(255,255,255,.18); }
+  .sa-btn--primary { background: #FE2C55; }
+  .sa-btn--primary:hover { background: #E62248; }
+
+  /* 统计 */
+  .shop-stats {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    padding: 16px 0; border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+
+  .stat { text-align: center; }
+  .stat__num { font-size: 19px; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums; }
+  .stat__label { font-size: 11px; color: rgba(255,255,255,.5); margin-top: 2px; }
+
+  /* 菜品列表 */
+  .section-title {
+    font-size: 15px; font-weight: 500; color: #fff;
+    padding: 20px 16px 12px; display: flex; align-items: center; gap: 8px;
+  }
+  .section-title__count { font-size: 12px; color: rgba(255,255,255,.4); font-weight: 400; }
+
+  .dish-list { padding: 0 16px 140px; }
+
+  .dl-item {
+    display: flex; gap: 12px; padding: 12px;
+    background: #161616; border-radius: 14px; margin-bottom: 10px;
+    transition: background .15s; cursor: pointer;
+  }
+  .dl-item:hover { background: #1E1E1E; }
+
+  .dl-media {
+    width: 76px; height: 100px; border-radius: 10px; overflow: hidden;
+    background: #222; flex-shrink: 0; position: relative;
+  }
+  .dl-media img { width: 100%; height: 100%; object-fit: cover; }
+  .dl-media__badge {
+    position: absolute; top: 5px; right: 5px; font-size: 10px;
+    background: rgba(0,0,0,.6); color: #fff; padding: 1px 5px; border-radius: 3px;
+  }
+  .dl-media__count {
+    position: absolute; bottom: 5px; right: 5px; font-size: 10px;
+    background: rgba(0,0,0,.6); color: #fff; padding: 1px 5px; border-radius: 3px;
+  }
+
+  .dl-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .dl-name { font-size: 16px; font-weight: 500; color: #fff; margin-bottom: 5px; }
+  .dl-desc {
+    font-size: 12px; color: rgba(255,255,255,.5); line-height: 1.5;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; margin-bottom: 8px;
+  }
+  .dl-meta { display: flex; align-items: center; gap: 8px; margin-top: auto; flex-wrap: wrap; }
+  .dl-time { font-size: 11px; color: rgba(255,255,255,.4); }
+  .dl-stats { display: flex; gap: 10px; font-size: 11px; color: rgba(255,255,255,.4); }
+
+  /* 底部固定打卡条 */
+  .checkin-bar {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 12px 16px 22px; z-index: 85;
+    background: linear-gradient(to top, rgba(13,13,13,.98) 60%, transparent);
+  }
+
+  .checkin-btn {
+    width: 100%; height: 50px; border-radius: 25px;
+    background: #FE2C55; color: #fff; font-size: 15px; font-weight: 500;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: all .2s;
+  }
+  .checkin-btn:hover { background: #E62248; }
+  .checkin-btn.is-done {
+    background: rgba(255,255,255,.12); color: rgba(255,255,255,.6);
+    cursor: default;
+  }
+
+  /* 滑动打卡面板 */
+  .slide-mask {
+    position: absolute; inset: 0; background: rgba(0,0,0,.7);
+    backdrop-filter: blur(4px); z-index: 100;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    padding: 32px;
+  }
+  .slide-mask.is-open { display: flex; }
+
+  .slide-title { font-size: 19px; font-weight: 600; color: #fff; margin-bottom: 8px; }
+  .slide-sub { font-size: 13px; color: rgba(255,255,255,.55); margin-bottom: 28px; text-align: center; line-height: 1.7; }
+
+  .slide-track {
+    width: 100%; height: 62px; border-radius: 31px;
+    background: rgba(255,255,255,.12); position: relative;
+    display: flex; align-items: center; overflow: hidden;
+    border: 1px solid rgba(255,255,255,.15);
+  }
+
+  .slide-fill {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 0;
+    background: linear-gradient(90deg, rgba(254,44,85,.4), rgba(254,44,85,.75));
+  }
+
+  .slide-thumb {
+    position: absolute; left: 5px; top: 5px;
+    width: 52px; height: 52px; border-radius: 50%;
+    background: #FE2C55; display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 20px; cursor: grab;
+    box-shadow: 0 2px 12px rgba(254,44,85,.5);
+    touch-action: none; z-index: 3;
+  }
+  .slide-thumb:active { cursor: grabbing; }
+
+  .slide-hint {
+    position: absolute; left: 0; right: 0; text-align: center;
+    font-size: 14px; color: rgba(255,255,255,.65); pointer-events: none;
+    padding-left: 48px;
+  }
+
+  .checkin-done {
+    text-align: center; color: #fff;
+  }
+  .checkin-done__icon { font-size: 56px; margin-bottom: 12px; }
+  .checkin-done__title { font-size: 19px; font-weight: 600; margin-bottom: 6px; }
+  .checkin-done__sub { font-size: 13px; color: rgba(255,255,255,.55); margin-bottom: 24px; }
+  .checkin-done__num {
+    font-size: 40px; font-weight: 600; color: #FE2C55;
+    font-variant-numeric: tabular-nums; margin-bottom: 4px;
+  }
+  .checkin-done__label { font-size: 12px; color: rgba(255,255,255,.5); }
+
+  /* 侧栏说明 */
+  .side-note {
+    width: 300px; color: #fff; font-size: 13px; line-height: 1.9;
+    background: #1C1C1E; border-radius: 16px; padding: 22px;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+  .side-note h3 { font-size: 15px; font-weight: 500; margin-bottom: 14px; }
+  .side-note__row { display: flex; gap: 8px; margin-bottom: 10px; align-items: flex-start; }
+  .side-note__k { color: rgba(255,255,255,.5); flex-shrink: 0; width: 62px; }
+  .side-note__v { color: rgba(255,255,255,.9); flex: 1; }
+  .side-note hr { border: none; border-top: 1px solid rgba(255,255,255,.08); margin: 16px 0; }
+
+  .toast {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: rgba(0,0,0,.85); color: #fff; padding: 10px 18px;
+    border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .25s;
+    pointer-events: none; z-index: 150; white-space: nowrap;
+  }
+  .toast.is-show { opacity: 1; }
+
+  @media (max-width: 820px) {
+    .stage { padding: 0; }
+    .side-note { display: none; }
+    .phone { width: 100vw; height: 100vh; border-radius: 0; border: none; }
+    .phone__notch { display: none; }
+    .nav-back { top: 14px; }
+  }
+</style>
+</head>
+<body data-app="client">
+
+<div class="stage">
+  <div class="phone">
+    <div class="phone__notch"></div>
+
+    <div class="nav-back" onclick="history.back()">‹</div>
+
+    <div class="scroll" id="scroll">
+      <!-- 头图 -->
+      <div class="hero">
+        <img id="heroImg" src="">
+        <div class="hero__shade"></div>
+      </div>
+
+      <!-- 店铺信息 -->
+      <div class="shop-info">
+        <div class="shop-head">
+          <div class="shop-logo"><img id="shopLogo" src=""></div>
+          <div style="flex:1;min-width:0;padding-bottom:2px">
+            <div class="shop-name" id="shopName">—</div>
+            <div class="shop-tags">
+              <span class="s-tag s-tag--cuisine" id="shopCuisine">—</span>
+              <span class="s-tag" id="shopDist">—</span>
+              <span class="s-tag" id="shopHours">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="shop-intro" id="shopIntro">—</div>
+
+        <div class="shop-acts">
+          <div class="sa-btn sa-btn--primary" onclick="doNav()">🧭 导航</div>
+          <div class="sa-btn" onclick="doCall()">📞 电话</div>
+          <div class="sa-btn" onclick="doShare()">↗ 分享</div>
+        </div>
+
+        <div class="shop-stats">
+          <div class="stat">
+            <div class="stat__num" id="stDishes">0</div>
+            <div class="stat__label">在售菜品</div>
+          </div>
+          <div class="stat">
+            <div class="stat__num" id="stLikes">0</div>
+            <div class="stat__label">累计点赞</div>
+          </div>
+          <div class="stat">
+            <div class="stat__num" id="stCheckins">0</div>
+            <div class="stat__label">人吃过</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 菜品列表 -->
+      <div class="section-title">
+        全部菜品 <span class="section-title__count" id="dishCount"></span>
+      </div>
+      <div class="dish-list" id="dishList"></div>
+    </div>
+
+    <!-- 底部打卡条 -->
+    <div class="checkin-bar">
+      <button class="checkin-btn" id="checkinBtn" onclick="openCheckin()">
+        👣 <span id="checkinBtnText">我吃过这家</span>
+      </button>
+    </div>
+
+    <!-- 滑动打卡面板 -->
+    <div class="slide-mask" id="slideMask">
+      <div id="slideView">
+        <div class="slide-title">确认到店打卡</div>
+        <div class="slide-sub">
+          滑动确认你来过这家店<br>
+          <span style="color:rgba(255,255,255,.35);font-size:12px">本期不做定位校验 · 后续将支持 GPS / 扫码</span>
+        </div>
+        <div class="slide-track" id="slideTrack">
+          <div class="slide-fill" id="slideFill"></div>
+          <div class="slide-hint" id="slideHint">滑动打卡 ›››</div>
+          <div class="slide-thumb" id="slideThumb">›</div>
+        </div>
+      </div>
+
+      <div id="doneView" class="checkin-done" style="display:none">
+        <div class="checkin-done__icon">🎉</div>
+        <div class="checkin-done__title">打卡成功</div>
+        <div class="checkin-done__sub">你的足迹已记录</div>
+        <div class="checkin-done__num" id="doneNum">0</div>
+        <div class="checkin-done__label">人吃过这家店</div>
+        <button class="btn btn--lg mt-24" style="background:rgba(255,255,255,.15);color:#fff"
+                onclick="closeCheckin()">完成</button>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <div class="side-note">
+    <h3>交互说明</h3>
+    <div class="side-note__row"><span class="side-note__k">顶部</span><span class="side-note__v">门头图 + 店铺信息 + 简介</span></div>
+    <div class="side-note__row"><span class="side-note__k">操作</span><span class="side-note__v">导航 / 电话 / 分享</span></div>
+    <div class="side-note__row"><span class="side-note__k">统计</span><span class="side-note__v">在售菜品 / 累计点赞 / 人吃过</span></div>
+    <div class="side-note__row"><span class="side-note__k">菜品</span><span class="side-note__v">永久保留，点击进菜品详情</span></div>
+    <hr>
+    <div class="side-note__row"><span class="side-note__k">打卡</span><span class="side-note__v">底部「我吃过这家」→ 滑动确认<br>滑动比点击更有仪式感</span></div>
+    <div class="side-note__row"><span class="side-note__k">校验</span><span class="side-note__v">本期不校验定位<br>二期 GPS · 三期扫码</span></div>
+    <hr>
+    <div class="text-12" style="color:rgba(255,255,255,.4)">
+      持久化用 localStorage，刷新后打卡状态保留
+    </div>
+  </div>
+</div>
+
+<script src="../assets/data/mock.js"></script>
+<script src="../assets/js/api.js"></script>
+<script>
+let shop = null;
+let checkinState = JSON.parse(localStorage.getItem('checkinShops') || '{}');
+
+/* ---------- 初始化 ---------- */
+(function init() {
+  const params = new URLSearchParams(location.search);
+  const id = params.get('id') || 's_001';
+  shop = MOCK.getShop(id) || MOCK.shops[0];
+
+  render();
+  bindSlide();
+})();
+
+function render() {
+  document.getElementById('heroImg').src = shop.cover;
+  document.getElementById('shopLogo').src = shop.logo;
+  document.getElementById('shopName').textContent = shop.name;
+  document.getElementById('shopCuisine').textContent = shop.cuisine;
+  document.getElementById('shopDist').textContent = shop.distance + 'km';
+  document.getElementById('shopHours').textContent = shop.hours;
+  document.getElementById('shopIntro').textContent = shop.intro;
+
+  document.getElementById('stDishes').textContent = shop.stats.dishes;
+  document.getElementById('stLikes').textContent = MOCK.fmtNum(shop.stats.likes);
+
+  const dishes = MOCK.getShopDishes(shop.id);
+  const extraCheckins = Object.values(MOCK._checkins).reduce((a, b) => a + b, 0);
+  const totalCheckins = shop.stats.checkins +
+    (checkinState[shop.id] ? 1 : 0);
+  document.getElementById('stCheckins').textContent = MOCK.fmtNum(totalCheckins);
+
+  document.getElementById('dishCount').textContent = '共 ' + dishes.length + ' 道';
+
+  const list = document.getElementById('dishList');
+  if (!dishes.length) {
+    list.innerHTML = '<div class="empty" style="color:rgba(255,255,255,.4)">' +
+      '<div class="empty__icon">🍽</div><div class="empty__text">还没有发布菜品</div></div>';
+    return;
+  }
+
+  list.innerHTML = dishes.map(d => {
+    const tier = MOCK.priceTiers.find(t => t.id === d.priceTierId);
+    const cover = d.type === 'video' ? (d.cover || d.media[0]) : d.media[0];
+    return `
+      <div class="dl-item" onclick="location.href='dish.html?id=${d.id}'">
+        <div class="dl-media">
+          <img src="${cover}">
+          ${d.type === 'video' ? '<div class="dl-media__badge">▶ 视频</div>' : ''}
+          ${d.type === 'image' && d.media.length > 1
+            ? `<div class="dl-media__count">${d.media.length} 图</div>` : ''}
+        </div>
+        <div class="dl-body">
+          <div class="dl-name">${d.name}</div>
+          ${d.desc ? `<div class="dl-desc">${d.desc}</div>` : ''}
+          <div class="dl-meta">
+            ${tier ? `<span class="tag ${MOCK.tierClass(tier.id)}">${tier.name}</span>` : ''}
+            ${d.realTag === 'real' ? '<span class="tag tag--real">实拍</span>' : ''}
+            <span class="dl-time">${MOCK.timeAgo(d.publishedAt)}</span>
+          </div>
+          <div class="dl-stats mt-8">
+            <span>♥ ${MOCK.fmtNum(d.stats.likes)}</span>
+            <span>☆ ${MOCK.fmtNum(d.stats.favorites)}</span>
+            <span>💬 ${MOCK.fmtNum(d.stats.comments)}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // 打卡状态
+  const btn = document.getElementById('checkinBtn');
+  if (checkinState[shop.id]) {
+    btn.classList.add('is-done');
+    document.getElementById('checkinBtnText').textContent = '你已打卡过这家店';
+  }
+}
+
+/* ---------- 操作 ---------- */
+function doNav() {
+  toast('导航至：' + shop.address);
+  track('shop_nav', { shopId: shop.id });
+}
+
+function doCall() {
+  toast('拨打：' + shop.phone);
+  track('shop_call', { shopId: shop.id });
+}
+
+function doShare() {
+  toast('已复制店铺链接');
+  track('shop_share', { shopId: shop.id });
+}
+
+/* ---------- 打卡 ---------- */
+function openCheckin() {
+  if (checkinState[shop.id]) {
+    toast('你今天已经打过卡啦');
+    return;
+  }
+  document.getElementById('slideMask').classList.add('is-open');
+  document.getElementById('slideView').style.display = '';
+  document.getElementById('doneView').style.display = 'none';
+  resetSlide();
+  track('checkin_open', { shopId: shop.id });
+}
+
+function closeCheckin() {
+  document.getElementById('slideMask').classList.remove('is-open');
+}
+
+function bindSlide() {
+  const thumb = document.getElementById('slideThumb');
+  const track = document.getElementById('slideTrack');
+  const fill = document.getElementById('slideFill');
+  const hint = document.getElementById('slideHint');
+
+  let dragging = false;
+  let startX = 0;
+  let curX = 0;
+
+  const max = () => track.clientWidth - thumb.offsetWidth - 10;
+
+  function onDown(e) {
+    dragging = true;
+    startX = (e.touches ? e.touches[0].clientX : e.clientX) - curX;
+    e.preventDefault();
+  }
+
+  function onMove(e) {
+    if (!dragging) return;
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - startX;
+    curX = Math.max(0, Math.min(max(), x));
+    thumb.style.left = (curX + 5) + 'px';
+    fill.style.width = (curX + 57) + 'px';
+    hint.style.opacity = String(Math.max(0, 1 - curX / max() * 1.5));
+    if (curX >= max() - 2) finish();
+  }
+
+  function onUp() {
+    if (!dragging) return;
+    dragging = false;
+    if (curX < max() - 2) {
+      curX = 0;
+      thumb.style.left = '5px';
+      fill.style.width = '0';
+      hint.style.opacity = '1';
+    }
+  }
+
+  thumb.addEventListener('mousedown', onDown);
+  thumb.addEventListener('touchstart', onDown, { passive: false });
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('mouseup', onUp);
+  document.addEventListener('touchend', onUp);
+}
+
+function resetSlide() {
+  const thumb = document.getElementById('slideThumb');
+  thumb.style.left = '5px';
+  document.getElementById('slideFill').style.width = '0';
+  document.getElementById('slideHint').style.opacity = '1';
+}
+
+function finish() {
+  checkinState[shop.id] = true;
+  localStorage.setItem('checkinShops', JSON.stringify(checkinState));
+  MOCK.doCheckin(MOCK.getShopDishes(shop.id)[0]?.id || 'd_001');
+
+  document.getElementById('slideView').style.display = 'none';
+  document.getElementById('doneView').style.display = '';
+  document.getElementById('doneNum').textContent = MOCK.fmtNum(shop.stats.checkins);
+
+  track('checkin_done', { shopId: shop.id, type: 'slide' });
+
+  setTimeout(() => {
+    closeCheckin();
+    render();
+  }, 2200);
+}
+
+/* ---------- Toast ---------- */
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('is-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-show'), 1600);
+}
+
+function track(event, data) { console.log('[track]', event, data); }
+</script>
+</body>
+</html>

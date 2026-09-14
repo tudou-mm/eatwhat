@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>内容管理 · 平台端</title>
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  .tabs4 { display: flex; gap: 6px; margin-bottom: 18px; }
+
+  .t4 {
+    padding: 7px 16px; border-radius: var(--radius-full); font-size: 13px;
+    background: var(--bg-hover); color: var(--text-2); cursor: pointer;
+    transition: all .15s; display: flex; align-items: center; gap: 6px;
+  }
+  .t4:hover { background: #E8E9EB; }
+  .t4.is-on { background: #FFF0F3; color: var(--brand); font-weight: 500; }
+  .t4__num {
+    background: rgba(0,0,0,.08); border-radius: 10px; padding: 0 6px;
+    font-size: 11px; line-height: 17px; min-width: 17px; text-align: center;
+  }
+  .t4.is-on .t4__num { background: var(--brand); color: #fff; }
+
+  .dish-cell { display: flex; gap: 12px; align-items: center; }
+  .dish-cell__img {
+    width: 48px; height: 62px; border-radius: 8px; overflow: hidden;
+    background: var(--bg-hover); flex-shrink: 0; position: relative;
+  }
+  .dish-cell__img img { width: 100%; height: 100%; object-fit: cover; }
+  .dish-cell__badge {
+    position: absolute; bottom: 2px; right: 2px; font-size: 9px;
+    background: rgba(0,0,0,.6); color: #fff; padding: 0 4px; border-radius: 2px;
+  }
+  .dish-cell__name { font-size: 14px; font-weight: 500; margin-bottom: 3px; }
+  .dish-cell__meta { font-size: 12px; color: var(--text-3); }
+
+  .ops { display: flex; gap: 4px; }
+
+  .report-row {
+    display: flex; gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--border);
+  }
+  .report-row:last-child { border-bottom: none; }
+  .report-row__icon {
+    width: 36px; height: 36px; border-radius: 9px; background: #FFF1F0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--danger); font-size: 15px; flex-shrink: 0;
+  }
+  .report-row__main { flex: 1; min-width: 0; }
+  .report-row__title { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+  .report-row__meta { font-size: 12px; color: var(--text-3); line-height: 1.7; }
+
+  .toast {
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-80px);
+    background: #1A1A1A; color: #fff; padding: 10px 20px; border-radius: var(--radius);
+    font-size: 13px; z-index: 200; opacity: 0; transition: all .3s;
+  }
+  .toast.is-show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  .modal-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45);
+    display: none; align-items: center; justify-content: center; z-index: 100;
+  }
+  .modal-mask.is-open { display: flex; }
+  .modal {
+    background: #fff; border-radius: var(--radius-lg);
+    width: 100%; max-width: 420px; padding: 24px;
+  }
+  .modal__title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .modal__desc { font-size: 13px; color: var(--text-3); margin-bottom: 18px; }
+
+  .tag-opts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+  .tag-opt {
+    padding: 12px 14px; border-radius: var(--radius); border: 1px solid var(--border);
+    font-size: 13px; cursor: pointer; transition: all .15s;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .tag-opt:hover { border-color: var(--border-strong); background: #FAFAFB; }
+  .tag-opt.is-on { border-color: var(--brand); background: #FFF9FA; }
+  .tag-opt__radio {
+    width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--border-strong);
+    flex-shrink: 0; position: relative;
+  }
+  .tag-opt.is-on .tag-opt__radio { border-color: var(--brand); }
+  .tag-opt.is-on .tag-opt__radio::after {
+    content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--brand);
+  }
+  .tag-opt__desc { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar__logo"><div class="sidebar__logo-dot"></div><span>吃什么 · 平台</span></div>
+    <nav class="sidebar__nav">
+      <a class="nav-item" href="dashboard.html">数据概览</a>
+      <a class="nav-item" href="audit-shops.html">商家审核 <span class="nav-item__badge">2</span></a>
+      <a class="nav-item" href="shops.html">店铺管理</a>
+      <a class="nav-item is-active" href="contents.html">内容管理</a>
+      <a class="nav-item" href="ranking.html">推荐排名</a>
+      <a class="nav-item" href="rules.html">发布规则</a>
+      <a class="nav-item" href="config.html">价格档 / 标签</a>
+      <a class="nav-item" href="users.html">用户管理</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar__title">内容管理</div>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__user">
+        <div class="avatar">运</div>
+        <span style="font-size:13px">平台运营</span>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <div class="tabs4">
+        <div class="t4 is-on" data-t="dishes" onclick="switchTab('dishes', this)">
+          全部菜品 <span class="t4__num" id="nDish">0</span>
+        </div>
+        <div class="t4" data-t="removed" onclick="switchTab('removed', this)">
+          已下架 <span class="t4__num" id="nRemoved">0</span>
+        </div>
+        <div class="t4" data-t="reports" onclick="switchTab('reports', this)">
+          举报处理 <span class="t4__num" id="nReport">0</span>
+        </div>
+      </div>
+
+      <!-- 菜品列表 -->
+      <div class="card" id="dishPanel">
+        <div class="card__head">
+          <input class="input" placeholder="搜索菜品或店铺" style="width:220px;height:32px;font-size:13px"
+                 id="kw" oninput="renderDishes()">
+          <div class="card__spacer"></div>
+          <select class="select" style="width:130px;height:32px;font-size:13px" id="ftTag" onchange="renderDishes()">
+            <option value="">全部标签</option>
+            <option value="real">实拍认证</option>
+            <option value="ad">广告</option>
+            <option value="pending">待核实</option>
+            <option value="none">未打标</option>
+          </select>
+        </div>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>菜品</th>
+              <th style="width:130px">所属店铺</th>
+              <th style="width:100px">价格档</th>
+              <th style="width:110px">真实性标签</th>
+              <th style="width:150px">数据</th>
+              <th style="width:110px">发布时间</th>
+              <th style="width:170px">操作</th>
+            </tr>
+          </thead>
+          <tbody id="dishBody"></tbody>
+        </table>
+      </div>
+
+      <!-- 举报处理 -->
+      <div class="card hidden" id="reportPanel">
+        <div class="card__head">
+          <div class="card__title">待处理举报</div>
+          <div class="card__subtitle">含用户恶意刷差评的商家举报</div>
+        </div>
+        <div class="card__body" id="reportBody" style="padding-top:6px;padding-bottom:6px"></div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- 打标签弹层 -->
+<div class="modal-mask" id="tagModal">
+  <div class="modal">
+    <div class="modal__title">设置真实性标签</div>
+    <div class="modal__desc" id="tagDishName"></div>
+    <div class="tag-opts" id="tagOpts"></div>
+    <div class="flex gap-10" style="justify-content:flex-end">
+      <button class="btn btn--ghost" onclick="closeTag()">取消</button>
+      <button class="btn btn--primary" onclick="saveTag()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="../assets/data/mock.js"></script>
+<script src="../assets/js/api.js"></script>
+<script>
+let tab = 'dishes';
+let tagging = null;
+let tagPick = null;
+
+const REMOVED = [];
+
+(function init() {
+  render();
+})();
+
+function switchTab(t, el) {
+  tab = t;
+  document.querySelectorAll('.t4').forEach(x => x.classList.toggle('is-on', x === el));
+  document.getElementById('dishPanel').classList.toggle('hidden', t === 'reports');
+  document.getElementById('reportPanel').classList.toggle('hidden', t !== 'reports');
+  render();
+}
+
+function render() {
+  document.getElementById('nDish').textContent = MOCK.dishes.length;
+  document.getElementById('nRemoved').textContent = REMOVED.length;
+  document.getElementById('nReport').textContent = MOCK.reports.filter(r => r.status === 'pending').length;
+
+  if (tab === 'reports') renderReports();
+  else renderDishes();
+}
+
+/* ---------- 菜品列表 ---------- */
+function renderDishes() {
+  const kw = document.getElementById('kw').value.trim();
+  const ft = document.getElementById('ftTag').value;
+
+  const base = tab === 'removed' ? REMOVED : MOCK.dishes;
+  let list = base.filter(d => {
+    if (kw && !d.name.includes(kw) && !d.shopName.includes(kw)) return false;
+    if (ft === 'none') return !d.realTag;
+    if (ft) return d.realTag === ft;
+    return true;
+  });
+
+  const body = document.getElementById('dishBody');
+  if (!list.length) {
+    body.innerHTML = `<tr><td colspan="7"><div class="empty">
+      <div class="empty__icon">🍽</div>
+      <div class="empty__text">${tab === 'removed' ? '暂无已下架内容' : '没有匹配的内容'}</div>
+      </div></td></tr>`;
+    return;
+  }
+
+  body.innerHTML = list.map(d => {
+    const tier = MOCK.priceTiers.find(t => t.id === d.priceTierId);
+    return `
+    <tr>
+      <td>
+        <div class="dish-cell">
+          <div class="dish-cell__img">
+            <img src="${d.cover || d.media[0]}">
+            ${d.type === 'video' ? '<div class="dish-cell__badge">▶</div>' : ''}
+          </div>
+          <div style="min-width:0">
+            <div class="dish-cell__name">${d.name}</div>
+            <div class="dish-cell__meta truncate" style="max-width:200px">${d.desc || '无简介'}</div>
+          </div>
+        </div>
+      </td>
+      <td class="text-13">${d.shopName}</td>
+      <td>${tier ? `<span class="tag ${MOCK.tierClass(tier.id)}">${tier.name}</span>` : '—'}</td>
+      <td>
+        ${d.realTag
+          ? `<span class="tag ${MOCK.realClass(d.realTag)}">${MOCK.realName(d.realTag)}</span>`
+          : '<span class="text-12 text-4">未打标</span>'}
+      </td>
+      <td class="text-12 text-2">
+        ♥ ${MOCK.fmtNum(d.stats.likes)}　☆ ${MOCK.fmtNum(d.stats.favorites)}<br>
+        💬 ${MOCK.fmtNum(d.stats.comments)}　👣 ${MOCK.fmtNum(d.stats.checkins)}
+      </td>
+      <td class="text-12 text-3">${d.publishedAt}</td>
+      <td>
+        <div class="ops">
+          ${tab === 'removed' ? `
+            <button class="btn btn--text btn--sm" onclick="restore('${d.id}')">恢复</button>
+          ` : `
+            <button class="btn btn--text btn--sm" onclick="openTag('${d.id}')">打标签</button>
+            <button class="btn btn--text btn--sm" onclick="viewFront('${d.id}')">前台</button>
+            <button class="btn btn--text btn--sm" style="color:var(--danger)" onclick="removeDish('${d.id}')">下架</button>
+          `}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+/* ---------- 举报 ---------- */
+function renderReports() {
+  const list = MOCK.reports.filter(r => r.status === 'pending');
+  const el = document.getElementById('reportBody');
+
+  if (!list.length) {
+    el.innerHTML = '<div class="empty"><div class="empty__icon">✅</div>' +
+      '<div class="empty__text">没有待处理的举报</div>' +
+      '<div class="empty__hint">全部处理完啦</div></div>';
+    return;
+  }
+
+  el.innerHTML = list.map(r => `
+    <div class="report-row">
+      <div class="report-row__icon">⚠</div>
+      <div class="report-row__main">
+        <div class="report-row__title">${r.targetName}</div>
+        <div class="report-row__meta">
+          类型：${r.type === 'dish' ? '菜品内容' : '用户评论'}　·　举报人：${r.reporter}<br>
+          理由：<b style="color:var(--danger)">${r.reason}</b>　·　${r.at}
+        </div>
+      </div>
+      <div class="flex gap-6 items-center">
+        <button class="btn btn--sm btn--outline" onclick="rejectReport('${r.id}')">驳回举报</button>
+        <button class="btn btn--sm btn--danger" onclick="acceptReport('${r.id}')">确认违规</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function acceptReport(id) {
+  const r = MOCK.reports.find(x => x.id === id);
+  if (!confirm(`确认「${r.targetName}」违规？\n\n菜品将被下架，评论将被隐藏。`)) return;
+
+  if (r.type === 'dish') {
+    const d = MOCK.getDish(r.targetId);
+    if (d) { d.status = 'removed'; REMOVED.push(d); MOCK.dishes.splice(MOCK.dishes.indexOf(d), 1); }
+  } else {
+    const c = MOCK.comments.find(x => x.id === r.targetId);
+    if (c) MOCK.comments.splice(MOCK.comments.indexOf(c), 1);
+  }
+
+  r.status = 'done';
+  render();
+  toast('已确认违规并处理');
+  track('admin_report_accept', { reportId: id });
+}
+
+function rejectReport(id) {
+  const r = MOCK.reports.find(x => x.id === id);
+  if (!confirm(`驳回「${r.targetName}」的举报？`)) return;
+  r.status = 'rejected';
+  render();
+  toast('已驳回该举报');
+  track('admin_report_reject', { reportId: id });
+}
+
+/* ---------- 下架 / 恢复 ---------- */
+function removeDish(id) {
+  const d = MOCK.getDish(id);
+  if (!confirm(`确定下架「${d.name}」？下架后客户端不再展示。`)) return;
+  d.status = 'removed';
+  REMOVED.push(d);
+  MOCK.dishes.splice(MOCK.dishes.indexOf(d), 1);
+  render();
+  toast('已下架，可在「已下架」中恢复');
+  track('admin_remove_dish', { dishId: id });
+}
+
+function restore(id) {
+  const d = REMOVED.find(x => x.id === id);
+  if (!d) return;
+  d.status = 'normal';
+  MOCK.dishes.push(d);
+  REMOVED.splice(REMOVED.indexOf(d), 1);
+  render();
+  toast('已恢复展示');
+}
+
+function viewFront(id) {
+  window.open('../client/dish.html?id=' + id, '_blank');
+}
+
+/* ---------- 打标签 ---------- */
+function openTag(id) {
+  tagging = MOCK.getDish(id);
+  tagPick = tagging.realTag || null;
+  document.getElementById('tagDishName').textContent = tagging.name + ' · ' + tagging.shopName;
+  renderTagOpts();
+  document.getElementById('tagModal').classList.add('is-open');
+}
+
+function renderTagOpts() {
+  const opts = [
+    { id: 'real', name: '实拍认证', desc: '平台核实为真实拍摄，客户端显示绿色标签' },
+    { id: 'ad', name: '广告', desc: '商家推广内容，客户端弱化展示' },
+    { id: 'pending', name: '待核实', desc: '有用户举报，等待进一步核实' },
+    { id: null, name: '清除标签', desc: '移除所有标签' }
+  ];
+
+  document.getElementById('tagOpts').innerHTML = opts.map(o => `
+    <div class="tag-opt ${tagPick === o.id ? 'is-on' : ''}" onclick="pickTag(${JSON.stringify(o.id)})">
+      <div class="tag-opt__radio"></div>
+      <div>
+        <div style="font-weight:500">${o.name}</div>
+        <div class="tag-opt__desc">${o.desc}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function pickTag(id) {
+  tagPick = id;
+  renderTagOpts();
+}
+
+function closeTag() {
+  document.getElementById('tagModal').classList.remove('is-open');
+  tagging = null;
+}
+
+function saveTag() {
+  if (!tagging) return;
+  tagging.realTag = tagPick;
+  closeTag();
+  render();
+  toast('标签已更新');
+  track('admin_tag_dish', { dishId: tagging?.id, tag: tagPick });
+}
+
+document.querySelectorAll('.modal-mask').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('is-open'); });
+});
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('is-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-show'), 1900);
+}
+
+function track(event, data) { console.log('[track]', event, data); }
+</script>
+</body>
+</html>

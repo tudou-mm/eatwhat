@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>店铺管理 · 平台端</title>
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  .shop-cell { display: flex; gap: 10px; align-items: center; }
+  .shop-cell__logo {
+    width: 38px; height: 38px; border-radius: 9px; overflow: hidden;
+    background: var(--bg-hover); flex-shrink: 0;
+  }
+  .shop-cell__logo img { width: 100%; height: 100%; object-fit: cover; }
+  .shop-cell__name { font-size: 14px; font-weight: 500; margin-bottom: 2px; }
+  .shop-cell__meta { font-size: 12px; color: var(--text-3); }
+
+  .ops { display: flex; gap: 4px; }
+
+  .status-dot {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12px;
+  }
+  .status-dot::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+  }
+  .status-dot--normal::before { background: var(--success); }
+  .status-dot--muted::before { background: var(--warning); }
+  .status-dot--banned::before { background: var(--danger); }
+  .status-dot--normal { color: var(--success); }
+  .status-dot--muted { color: var(--warning); }
+  .status-dot--banned { color: var(--danger); }
+
+  .toast {
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-80px);
+    background: #1A1A1A; color: #fff; padding: 10px 20px; border-radius: var(--radius);
+    font-size: 13px; z-index: 200; opacity: 0; transition: all .3s;
+  }
+  .toast.is-show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  .drawer-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,.4);
+    display: none; z-index: 100; justify-content: flex-end;
+  }
+  .drawer-mask.is-open { display: flex; }
+  .drawer {
+    width: 480px; background: #fff; height: 100%; overflow-y: auto;
+    display: flex; flex-direction: column;
+  }
+  .drawer__head {
+    padding: 20px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  .drawer__title { font-size: 16px; font-weight: 600; }
+  .drawer__close {
+    margin-left: auto; width: 28px; height: 28px; border-radius: 50%;
+    background: var(--bg-hover); display: flex; align-items: center;
+    justify-content: center; cursor: pointer; color: var(--text-2);
+  }
+  .drawer__body { padding: 24px; flex: 1; }
+  .drawer__foot {
+    padding: 16px 24px; border-top: 1px solid var(--border);
+    display: flex; gap: 10px; flex-shrink: 0;
+  }
+
+  .dt-cover { height: 140px; border-radius: var(--radius); overflow: hidden; margin-bottom: 18px; background: var(--bg-hover); }
+  .dt-cover img { width: 100%; height: 100%; object-fit: cover; }
+
+  .dt-row { display: flex; font-size: 13px; margin-bottom: 12px; }
+  .dt-row__k { color: var(--text-3); width: 88px; flex-shrink: 0; }
+  .dt-row__v { flex: 1; word-break: break-all; }
+
+  .dt-stats {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+    padding: 16px 0; border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border); margin: 18px 0;
+  }
+  .dt-stat { text-align: center; }
+  .dt-stat__num { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .dt-stat__label { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+  .danger-zone {
+    background: #FFF5F5; border-radius: var(--radius); padding: 16px; margin-top: 18px;
+  }
+  .danger-zone__title { font-size: 13px; font-weight: 500; color: var(--danger); margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar__logo"><div class="sidebar__logo-dot"></div><span>吃什么 · 平台</span></div>
+    <nav class="sidebar__nav">
+      <a class="nav-item" href="dashboard.html">数据概览</a>
+      <a class="nav-item" href="audit-shops.html">商家审核 <span class="nav-item__badge">2</span></a>
+      <a class="nav-item is-active" href="shops.html">店铺管理</a>
+      <a class="nav-item" href="contents.html">内容管理</a>
+      <a class="nav-item" href="ranking.html">推荐排名</a>
+      <a class="nav-item" href="rules.html">发布规则</a>
+      <a class="nav-item" href="config.html">价格档 / 标签</a>
+      <a class="nav-item" href="users.html">用户管理</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar__title">店铺管理</div>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__user">
+        <div class="avatar">运</div>
+        <span style="font-size:13px">平台运营</span>
+      </div>
+    </header>
+
+    <div class="content">
+      <div class="page-head">
+        <div>
+          <div class="page-head__title">全部店铺</div>
+          <div class="page-head__desc">可禁言、封店，并单独配置发布规则</div>
+        </div>
+        <div class="page-head__spacer"></div>
+        <span class="tag tag--success">正常 <span id="cNormal">0</span></span>
+        <span class="tag tag--warning">禁言 <span id="cMuted">0</span></span>
+        <span class="tag tag--danger">封禁 <span id="cBanned">0</span></span>
+      </div>
+
+      <div class="card">
+        <div class="card__head">
+          <input class="input" placeholder="搜索店铺名" style="width:220px;height:32px;font-size:13px"
+                 id="kw" oninput="render()">
+          <div class="card__spacer"></div>
+          <select class="select" style="width:120px;height:32px;font-size:13px" id="fs" onchange="render()">
+            <option value="">全部状态</option>
+            <option value="normal">正常</option>
+            <option value="muted">禁言</option>
+            <option value="banned">封禁</option>
+          </select>
+        </div>
+
+        <table class="table">
+          <thead>
+            <tr>
+              <th>店铺</th>
+              <th style="width:120px">地区</th>
+              <th style="width:110px">状态</th>
+              <th style="width:110px">今日发布</th>
+              <th style="width:130px">发布规则</th>
+              <th style="width:140px">数据</th>
+              <th style="width:150px">操作</th>
+            </tr>
+          </thead>
+          <tbody id="body"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 详情抽屉 -->
+<div class="drawer-mask" id="drawerMask" onclick="if(event.target===this)closeDrawer()">
+  <div class="drawer">
+    <div class="drawer__head">
+      <div class="drawer__title">店铺详情</div>
+      <div class="drawer__close" onclick="closeDrawer()">×</div>
+    </div>
+    <div class="drawer__body" id="drawerBody"></div>
+    <div class="drawer__foot">
+      <button class="btn btn--ghost flex-1" onclick="closeDrawer()">关闭</button>
+      <button class="btn btn--outline" onclick="viewFront()">查看前台</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="../assets/data/mock.js"></script>
+<script src="../assets/js/api.js"></script>
+<script>
+let current = null;
+
+(function init() { render(); })();
+
+function render() {
+  const kw = document.getElementById('kw').value.trim();
+  const fs = document.getElementById('fs').value;
+
+  const all = MOCK.shops;
+  document.getElementById('cNormal').textContent = all.filter(s => s.status === 'normal').length;
+  document.getElementById('cMuted').textContent = all.filter(s => s.status === 'muted').length;
+  document.getElementById('cBanned').textContent = all.filter(s => s.status === 'banned').length;
+
+  let list = all.filter(s => !kw || s.name.includes(kw)).filter(s => !fs || s.status === fs);
+
+  const body = document.getElementById('body');
+  if (!list.length) {
+    body.innerHTML = '<tr><td colspan="7"><div class="empty"><div class="empty__icon">🏪</div>' +
+      '<div class="empty__text">没有匹配的店铺</div></div></td></tr>';
+    return;
+  }
+
+  body.innerHTML = list.map(s => {
+    const isCustom = s.intervalHours !== 24 || s.dailyLimit !== 1;
+    const statusText = { normal: '正常', muted: '禁言', banned: '封禁' }[s.status];
+    return `
+    <tr>
+      <td>
+        <div class="shop-cell">
+          <div class="shop-cell__logo"><img src="${s.logo}"></div>
+          <div>
+            <div class="shop-cell__name">${s.name}</div>
+            <div class="shop-cell__meta">${s.cuisine}</div>
+          </div>
+        </div>
+      </td>
+      <td class="text-13 text-2">${s.city}${s.district}</td>
+      <td><span class="status-dot status-dot--${s.status}">${statusText}</span></td>
+      <td>
+        ${s.canPostToday
+          ? '<span class="tag tag--warning">今日未发</span>'
+          : '<span class="tag tag--success">今日已发</span>'}
+      </td>
+      <td class="text-12 text-2">
+        ${s.intervalHours}h / ${s.dailyLimit}条
+        ${isCustom ? '<span class="tag tag--warning" style="margin-left:4px">自定义</span>' : ''}
+      </td>
+      <td class="text-12 text-2">
+        ♥ ${MOCK.fmtNum(s.stats.likes)}<br>👣 ${MOCK.fmtNum(s.stats.checkins)}
+      </td>
+      <td>
+        <div class="ops">
+          <button class="btn btn--text btn--sm" onclick="openDetail('${s.id}')">详情</button>
+          ${s.status === 'normal'
+            ? `<button class="btn btn--text btn--sm" style="color:var(--warning)" onclick="setStatus('${s.id}','muted')">禁言</button>`
+            : `<button class="btn btn--text btn--sm" style="color:var(--success)" onclick="setStatus('${s.id}','normal')">解禁</button>`}
+          <button class="btn btn--text btn--sm" style="color:var(--danger)" onclick="setStatus('${s.id}','banned')">封店</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function setStatus(id, st) {
+  const s = MOCK.getShop(id);
+  const names = { normal: '解禁', muted: '禁言', banned: '封禁' };
+  const tips = {
+    normal: `确定解除「${s.name}」的限制？店铺将恢复正常运营。`,
+    muted: `确定禁言「${s.name}」？该店铺将无法发布菜品和回复评论。`,
+    banned: `确定封禁「${s.name}」？该店铺将从客户端彻底下架，且无法登录。`
+  };
+  if (!confirm(tips[st])) return;
+
+  s.status = st;
+  render();
+  toast(`已${names[st]}「${s.name}」`);
+  track('admin_shop_status', { shopId: id, status: st });
+}
+
+function openDetail(id) {
+  current = MOCK.getShop(id);
+  const s = current;
+  const dishes = MOCK.getShopDishes(s.id);
+
+  document.getElementById('drawerBody').innerHTML = `
+    <div class="dt-cover"><img src="${s.cover}"></div>
+
+    <div class="dt-row"><span class="dt-row__k">店铺名称</span><span class="dt-row__v">${s.name}</span></div>
+    <div class="dt-row"><span class="dt-row__k">菜系分类</span><span class="dt-row__v">${s.cuisine}</span></div>
+    <div class="dt-row"><span class="dt-row__k">地址</span><span class="dt-row__v">${s.address}</span></div>
+    <div class="dt-row"><span class="dt-row__k">电话</span><span class="dt-row__v">${s.phone}</span></div>
+    <div class="dt-row"><span class="dt-row__k">营业时间</span><span class="dt-row__v">${s.hours}</span></div>
+    <div class="dt-row"><span class="dt-row__k">店铺简介</span><span class="dt-row__v">${s.intro || '未填写'}</span></div>
+
+    <div class="dt-stats">
+      <div class="dt-stat"><div class="dt-stat__num">${dishes.length}</div><div class="dt-stat__label">菜品</div></div>
+      <div class="dt-stat"><div class="dt-stat__num">${MOCK.fmtNum(s.stats.views)}</div><div class="dt-stat__label">浏览</div></div>
+      <div class="dt-stat"><div class="dt-stat__num">${MOCK.fmtNum(s.stats.likes)}</div><div class="dt-stat__label">点赞</div></div>
+      <div class="dt-stat"><div class="dt-stat__num">${MOCK.fmtNum(s.stats.checkins)}</div><div class="dt-stat__label">打卡</div></div>
+    </div>
+
+    <div class="field">
+      <div class="field__label">发布间隔（小时）</div>
+      <input class="num-input" type="number" id="dInterval" value="${s.intervalHours}"
+             style="width:100px" min="1" max="168">
+      <div class="field__hint">默认 24 小时；修改不影响已发布记录</div>
+    </div>
+
+    <div class="field">
+      <div class="field__label">每日上限（条）</div>
+      <input class="num-input" type="number" id="dLimit" value="${s.dailyLimit}"
+             style="width:100px" min="1" max="10">
+      <div class="field__hint">默认 1 条</div>
+    </div>
+
+    <button class="btn btn--primary" onclick="saveRule()">保存发布规则</button>
+
+    <div class="danger-zone">
+      <div class="danger-zone__title">违规处理</div>
+      <div class="text-12 text-3 mb-12">三级处理：内容下架 → 商家禁言 → 封禁店铺</div>
+      <div class="flex gap-8">
+        <button class="btn btn--sm btn--outline" style="color:var(--warning)" onclick="setStatus('${s.id}','muted')">禁言</button>
+        <button class="btn btn--sm btn--outline" style="color:var(--danger)" onclick="setStatus('${s.id}','banned')">封店</button>
+        <a class="btn btn--sm btn--outline" href="contents.html">去下架内容</a>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('drawerMask').classList.add('is-open');
+}
+
+function closeDrawer() {
+  document.getElementById('drawerMask').classList.remove('is-open');
+  current = null;
+}
+
+function saveRule() {
+  if (!current) return;
+  const iv = Number(document.getElementById('dInterval').value) || 24;
+  const lm = Number(document.getElementById('dLimit').value) || 1;
+  current.intervalHours = iv;
+  current.dailyLimit = lm;
+  render();
+  toast(`规则已保存：${iv} 小时 / ${lm} 条`);
+}
+
+function viewFront() {
+  if (!current) return;
+  window.open('../client/shop.html?id=' + current.id, '_blank');
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('is-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-show'), 1800);
+}
+
+function track(event, data) { console.log('[track]', event, data); }
+</script>
+</body>
+</html>

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数据概览 · 平台端</title>
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 20px; }
+
+  .kpi {
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg);
+    padding: 20px; position: relative;
+  }
+  .kpi__label { font-size: 13px; color: var(--text-3); margin-bottom: 10px; }
+  .kpi__num { font-size: 30px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .kpi__delta { font-size: 12px; margin-top: 8px; display: flex; align-items: center; gap: 4px; }
+  .kpi__delta--up { color: var(--success); }
+  .kpi__delta--down { color: var(--danger); }
+  .kpi__delta--flat { color: var(--text-4); }
+
+  .kpi--alert .kpi__num { color: var(--danger); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 340px; gap: 20px; align-items: start; }
+
+  .chart-box { height: 240px; position: relative; padding: 10px 0; }
+
+  .bars { display: flex; align-items: flex-end; gap: 14px; height: 100%; padding: 0 8px; }
+
+  .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; height: 100%; justify-content: flex-end; }
+
+  .bar {
+    width: 100%; max-width: 38px; border-radius: 6px 6px 0 0;
+    background: linear-gradient(180deg, #FE2C55, #FF8FA5);
+    transition: height .4s; position: relative;
+  }
+  .bar__val {
+    position: absolute; top: -20px; left: 50%; transform: translateX(-50%);
+    font-size: 12px; color: var(--text-2); font-weight: 500;
+  }
+  .bar__label { font-size: 12px; color: var(--text-3); }
+
+  .todo-item {
+    display: flex; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border);
+    align-items: center;
+  }
+  .todo-item:last-child { border-bottom: none; }
+  .todo-item__icon {
+    width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 15px;
+  }
+  .todo-item__main { flex: 1; min-width: 0; }
+  .todo-item__title { font-size: 14px; font-weight: 500; margin-bottom: 3px; }
+  .todo-item__desc { font-size: 12px; color: var(--text-3); }
+
+  .rank-mini {
+    display: flex; gap: 10px; padding: 10px 0;
+    border-bottom: 1px solid var(--border); align-items: center;
+  }
+  .rank-mini:last-child { border-bottom: none; }
+  .rank-mini__no {
+    width: 22px; height: 22px; border-radius: 6px; background: var(--bg-hover);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600; color: var(--text-2); flex-shrink: 0;
+  }
+  .rank-mini__no--top { background: var(--brand); color: #fff; }
+  .rank-mini__name { font-size: 13px; flex: 1; }
+  .rank-mini__val { font-size: 12px; color: var(--text-3); }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar__logo"><div class="sidebar__logo-dot"></div><span>吃什么 · 平台</span></div>
+    <nav class="sidebar__nav">
+      <a class="nav-item is-active" href="dashboard.html">数据概览</a>
+      <a class="nav-item" href="audit-shops.html">商家审核 <span class="nav-item__badge">2</span></a>
+      <a class="nav-item" href="shops.html">店铺管理</a>
+      <a class="nav-item" href="contents.html">内容管理</a>
+      <a class="nav-item" href="ranking.html">推荐排名</a>
+      <a class="nav-item" href="rules.html">发布规则</a>
+      <a class="nav-item" href="config.html">价格档 / 标签</a>
+      <a class="nav-item" href="users.html">用户管理</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar__title">数据概览</div>
+      <div class="topbar__spacer"></div>
+      <select class="select" style="width:130px;height:32px;font-size:13px">
+        <option>成都市</option>
+        <option>重庆市</option>
+      </select>
+      <div class="topbar__user">
+        <div class="avatar">运</div>
+        <span style="font-size:13px">平台运营</span>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- KPI -->
+      <div class="kpi-grid">
+        <div class="kpi">
+          <div class="kpi__label">在营店铺</div>
+          <div class="kpi__num">6</div>
+          <div class="kpi__delta kpi__delta--up">↑ 本周 +2</div>
+        </div>
+        <div class="kpi kpi--alert">
+          <div class="kpi__label">待审核商家</div>
+          <div class="kpi__num" id="kpiPending">2</div>
+          <div class="kpi__delta kpi__delta--flat">需尽快处理</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi__label">今日发布菜品</div>
+          <div class="kpi__num">5</div>
+          <div class="kpi__delta kpi__delta--up">↑ 较昨日 +1</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi__label">今日活跃用户</div>
+          <div class="kpi__num">1,286</div>
+          <div class="kpi__delta kpi__delta--up">↑ 8.2%</div>
+        </div>
+        <div class="kpi kpi--alert">
+          <div class="kpi__label">待处理举报</div>
+          <div class="kpi__num" id="kpiReport">2</div>
+          <div class="kpi__delta kpi__delta--flat">含恶意差评</div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div>
+          <!-- 趋势图 -->
+          <div class="card mb-16">
+            <div class="card__head">
+              <div class="card__title">近 7 日发布与活跃趋势</div>
+              <div class="card__spacer"></div>
+              <div class="card__subtitle">单位：条 / 人</div>
+            </div>
+            <div class="card__body">
+              <div class="chart-box">
+                <div class="bars" id="bars"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 热店铺 -->
+          <div class="card">
+            <div class="card__head">
+              <div class="card__title">今日热门店铺</div>
+              <div class="card__subtitle">按浏览量排序</div>
+            </div>
+            <div class="card__body" style="padding-top:4px" id="hotShops"></div>
+          </div>
+        </div>
+
+        <!-- 待办 -->
+        <div class="card">
+          <div class="card__head">
+            <div class="card__title">待办事项</div>
+          </div>
+          <div class="card__body" style="padding-top:4px">
+            <div class="todo-item">
+              <div class="todo-item__icon" style="background:#FFF7E6;color:#D46B08">🏪</div>
+              <div class="todo-item__main">
+                <div class="todo-item__title">2 家商家待审核</div>
+                <div class="todo-item__desc">新开的螺蛳粉、巷子口串串香</div>
+              </div>
+              <a class="btn btn--sm btn--outline" href="audit-shops.html">去处理</a>
+            </div>
+
+            <div class="todo-item">
+              <div class="todo-item__icon" style="background:#FFF1F0;color:var(--danger)">⚠</div>
+              <div class="todo-item__main">
+                <div class="todo-item__title">2 条举报待处理</div>
+                <div class="todo-item__desc">含 1 条商家举报的恶意刷差评</div>
+              </div>
+              <a class="btn btn--sm btn--outline" href="contents.html">去处理</a>
+            </div>
+
+            <div class="todo-item">
+              <div class="todo-item__icon" style="background:#E6F4FF;color:var(--info)">📌</div>
+              <div class="todo-item__main">
+                <div class="todo-item__title">推荐排名待调整</div>
+                <div class="todo-item__desc">蜀香小馆置顶已持续 3 天</div>
+              </div>
+              <a class="btn btn--sm btn--outline" href="ranking.html">去调整</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="../assets/data/mock.js"></script>
+<script src="../assets/js/api.js"></script>
+<script>
+(function init() {
+  // 趋势柱状
+  const data = [
+    { d: '周一', v: 3 }, { d: '周二', v: 4 }, { d: '周三', v: 2 },
+    { d: '周四', v: 5 }, { d: '周五', v: 6 }, { d: '周六', v: 4 }, { d: '今日', v: 5 }
+  ];
+  const max = Math.max(...data.map(x => x.v));
+  document.getElementById('bars').innerHTML = data.map(x => `
+    <div class="bar-col">
+      <div style="flex:1;display:flex;align-items:flex-end;width:100%;justify-content:center">
+        <div class="bar" style="height:${(x.v / max) * 100}%">
+          <div class="bar__val">${x.v}</div>
+        </div>
+      </div>
+      <div class="bar__label">${x.d}</div>
+    </div>
+  `).join('');
+
+  // 热门店铺
+  const hot = [...MOCK.shops].sort((a, b) => b.stats.views - a.stats.views);
+  document.getElementById('hotShops').innerHTML = hot.map((s, i) => `
+    <div class="rank-mini">
+      <div class="rank-mini__no ${i < 3 ? 'rank-mini__no--top' : ''}">${i + 1}</div>
+      <div style="width:28px;height:28px;border-radius:7px;overflow:hidden;background:var(--bg-hover)">
+        <img src="${s.logo}" style="width:100%;height:100%;object-fit:cover">
+      </div>
+      <div class="rank-mini__name">${s.name}</div>
+      <div class="rank-mini__val">${MOCK.fmtNum(s.stats.views)} 浏览</div>
+    </div>
+  `).join('');
+
+  document.getElementById('kpiPending').textContent = MOCK.pendingShops.length;
+  document.getElementById('kpiReport').textContent = MOCK.reports.filter(r => r.status === 'pending').length;
+})();
+</script>
+</body>
+</html>

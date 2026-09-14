@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>商家审核 · 平台端</title>
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  .layout { display: grid; grid-template-columns: 1fr 400px; gap: 20px; align-items: start; }
+
+  .pending-item {
+    display: flex; gap: 12px; padding: 16px; border-bottom: 1px solid var(--border);
+    cursor: pointer; transition: background .15s;
+  }
+  .pending-item:hover { background: #FAFAFB; }
+  .pending-item.is-active { background: #FFF9FA; border-left: 3px solid var(--brand); padding-left: 13px; }
+
+  .pi__logo {
+    width: 52px; height: 52px; border-radius: 10px; overflow: hidden;
+    background: var(--bg-hover); flex-shrink: 0;
+  }
+  .pi__logo img { width: 100%; height: 100%; object-fit: cover; }
+  .pi__name { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+  .pi__meta { font-size: 12px; color: var(--text-3); line-height: 1.6; }
+  .pi__time { font-size: 12px; color: var(--text-4); margin-top: 6px; }
+
+  .detail-panel {
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg);
+    position: sticky; top: 80px; overflow: hidden;
+  }
+
+  .dp__head {
+    padding: 18px 20px; border-bottom: 1px solid var(--border);
+    font-size: 15px; font-weight: 600;
+  }
+  .dp__body { padding: 20px; max-height: calc(100vh - 300px); overflow-y: auto; }
+
+  .cover-big {
+    height: 180px; border-radius: var(--radius); overflow: hidden;
+    background: var(--bg-hover); margin-bottom: 18px;
+  }
+  .cover-big img { width: 100%; height: 100%; object-fit: cover; }
+
+  .info-item { margin-bottom: 14px; }
+  .info-item__k { font-size: 12px; color: var(--text-3); margin-bottom: 4px; }
+  .info-item__v { font-size: 14px; line-height: 1.6; word-break: break-all; }
+
+  .photo-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+  .photo-row img { width: 70px; height: 70px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+
+  .map-mini {
+    height: 130px; border-radius: var(--radius); background: #E8EEF4;
+    position: relative; overflow: hidden;
+    background-image:
+      linear-gradient(rgba(0,0,0,.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,0,0,.045) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  .map-mini__pin {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%);
+    font-size: 22px;
+  }
+
+  .dp__foot {
+    padding: 16px 20px; border-top: 1px solid var(--border);
+    display: flex; gap: 10px;
+  }
+
+  .toast {
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-80px);
+    background: #1A1A1A; color: #fff; padding: 10px 20px; border-radius: var(--radius);
+    font-size: 13px; z-index: 200; opacity: 0; transition: all .3s;
+  }
+  .toast.is-show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  .modal-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45);
+    display: none; align-items: center; justify-content: center; z-index: 100;
+  }
+  .modal-mask.is-open { display: flex; }
+  .modal {
+    background: #fff; border-radius: var(--radius-lg); width: 100%;
+    max-width: 440px; padding: 24px;
+  }
+  .modal__title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .modal__desc { font-size: 13px; color: var(--text-3); margin-bottom: 16px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar__logo"><div class="sidebar__logo-dot"></div><span>吃什么 · 平台</span></div>
+    <nav class="sidebar__nav">
+      <a class="nav-item" href="dashboard.html">数据概览</a>
+      <a class="nav-item is-active" href="audit-shops.html">商家审核 <span class="nav-item__badge" id="badgeNum">2</span></a>
+      <a class="nav-item" href="shops.html">店铺管理</a>
+      <a class="nav-item" href="contents.html">内容管理</a>
+      <a class="nav-item" href="ranking.html">推荐排名</a>
+      <a class="nav-item" href="rules.html">发布规则</a>
+      <a class="nav-item" href="config.html">价格档 / 标签</a>
+      <a class="nav-item" href="users.html">用户管理</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar__title">商家审核</div>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__user">
+        <div class="avatar">运</div>
+        <span style="font-size:13px">平台运营</span>
+      </div>
+    </header>
+
+    <div class="content">
+      <div class="page-head">
+        <div>
+          <div class="page-head__title">待审核商家</div>
+          <div class="page-head__desc">只审店铺资质，菜品内容不审核</div>
+        </div>
+        <div class="page-head__spacer"></div>
+        <select class="select" style="width:130px" id="statusSel" onchange="render()">
+          <option value="pending">待审核</option>
+          <option value="approved">已通过</option>
+          <option value="rejected">已驳回</option>
+        </select>
+      </div>
+
+      <div class="layout">
+        <!-- 左：列表 -->
+        <div class="card">
+          <div class="card__head">
+            <div class="card__title" id="listTitle">待审核</div>
+            <div class="card__spacer"></div>
+            <div class="card__subtitle" id="listCount"></div>
+          </div>
+          <div id="pendingList"></div>
+        </div>
+
+        <!-- 右：详情 -->
+        <div class="detail-panel" id="detailPanel"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 驳回弹层 -->
+<div class="modal-mask" id="rejectModal">
+  <div class="modal">
+    <div class="modal__title">驳回申请</div>
+    <div class="modal__desc">请说明原因，商家会看到并需要修改后重新提交</div>
+    <textarea class="textarea" id="rejectReason" placeholder="例如：门头图不清晰，无法辨认店铺招牌…"></textarea>
+    <div class="flex gap-10 mt-16" style="justify-content:flex-end">
+      <button class="btn btn--ghost" onclick="closeReject()">取消</button>
+      <button class="btn btn--danger" onclick="doReject()">确认驳回</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="../assets/data/mock.js"></script>
+<script src="../assets/js/api.js"></script>
+<script>
+let status = 'pending';
+let current = null;
+
+// 审核记录（原型内存）
+const RECORDS = {
+  pending: [],
+  approved: [],
+  rejected: []
+};
+
+(function init() {
+  RECORDS.pending = MOCK.pendingShops.map(s => ({ ...s }));
+
+  // 预置已通过/已驳回数据演示
+  RECORDS.approved = [
+    { ...MOCK.shops[0], submittedAt: '2026-09-10 14:20', reviewedAt: '2026-09-10 16:05', reviewer: '平台运营' },
+    { ...MOCK.shops[1], submittedAt: '2026-09-09 10:12', reviewedAt: '2026-09-09 11:30', reviewer: '平台运营' }
+  ];
+  RECORDS.rejected = [
+    {
+      id: 'p_r1', name: '无名小摊', logo: 'https://picsum.photos/seed/rej1/200/200',
+      cover: 'https://picsum.photos/seed/rejcover1/800/600',
+      address: '成都市某处', city: '成都市', district: '金牛区',
+      phone: '028-0000-0000', hours: '不定', cuisine: '小吃', intro: '',
+      submittedAt: '2026-09-08 09:00', reviewedAt: '2026-09-08 10:20',
+      reviewer: '平台运营', rejectReason: '门头图不清晰，无法辨认店铺招牌，且未填写详细地址'
+    }
+  ];
+
+  render();
+})();
+
+function getList() { return RECORDS[status]; }
+
+function render() {
+  const list = getList();
+  const titleMap = { pending: '待审核', approved: '已通过', rejected: '已驳回' };
+
+  document.getElementById('listTitle').textContent = titleMap[status];
+  document.getElementById('listCount').textContent = '共 ' + list.length + ' 家';
+  document.getElementById('badgeNum').textContent = RECORDS.pending.length;
+  document.getElementById('badgeNum').style.display = RECORDS.pending.length ? '' : 'none';
+
+  const el = document.getElementById('pendingList');
+  if (!list.length) {
+    el.innerHTML = `<div class="empty"><div class="empty__icon">📭</div>
+      <div class="empty__text">${status === 'pending' ? '没有待审核的商家' : '暂无记录'}</div>
+      <div class="empty__hint">${status === 'pending' ? '全部处理完啦' : ''}</div></div>`;
+    document.getElementById('detailPanel').innerHTML =
+      '<div class="empty" style="padding:80px 20px"><div class="empty__icon">👈</div>' +
+      '<div class="empty__text">从左侧选择一家商家查看详情</div></div>';
+    current = null;
+    return;
+  }
+
+  el.innerHTML = list.map(s => `
+    <div class="pending-item ${current && current.id === s.id ? 'is-active' : ''}"
+         onclick="selectShop('${s.id}')">
+      <div class="pi__logo"><img src="${s.logo}"></div>
+      <div style="flex:1;min-width:0">
+        <div class="pi__name">${s.name}</div>
+        <div class="pi__meta">${s.cuisine} · ${s.district}</div>
+        <div class="pi__meta">提交于 ${s.submittedAt}</div>
+        ${status === 'rejected' && s.rejectReason
+          ? `<div class="pi__time" style="color:var(--danger)">驳回：${s.rejectReason.slice(0,18)}…</div>`
+          : ''}
+      </div>
+      ${status === 'pending' ? '<span class="tag tag--warning">待处理</span>' : ''}
+      ${status === 'approved' ? '<span class="tag tag--success">已通过</span>' : ''}
+      ${status === 'rejected' ? '<span class="tag tag--danger">已驳回</span>' : ''}
+    </div>
+  `).join('');
+
+  if (!current || !list.find(s => s.id === current.id)) {
+    selectShop(list[0].id);
+  } else {
+    renderDetail(current);
+  }
+}
+
+function selectShop(id) {
+  current = getList().find(s => s.id === id);
+  document.querySelectorAll('.pending-item').forEach(el => el.classList.remove('is-active'));
+  render();
+}
+
+function renderDetail(s) {
+  const photos = s.photos || [
+    'https://picsum.photos/seed/shopia/300/300',
+    'https://picsum.photos/seed/shopib/300/300'
+  ];
+
+  document.getElementById('detailPanel').innerHTML = `
+    <div class="dp__head">${s.name}</div>
+    <div class="dp__body">
+      <div class="cover-big"><img src="${s.cover || s.logo}"></div>
+
+      <div class="info-item">
+        <div class="info-item__k">菜系分类</div>
+        <div class="info-item__v"><span class="tag tag--brand">${s.cuisine}</span></div>
+      </div>
+
+      <div class="info-item">
+        <div class="info-item__k">店铺地址</div>
+        <div class="info-item__v">${s.address}</div>
+      </div>
+
+      <div class="map-mini">
+        <div class="map-mini__pin">📍</div>
+      </div>
+
+      <div class="info-item mt-16">
+        <div class="info-item__k">联系电话</div>
+        <div class="info-item__v">${s.phone}</div>
+      </div>
+
+      <div class="info-item">
+        <div class="info-item__k">营业时间</div>
+        <div class="info-item__v">${s.hours}</div>
+      </div>
+
+      <div class="info-item">
+        <div class="info-item__k">店铺简介</div>
+        <div class="info-item__v" style="color:${s.intro ? 'var(--text-1)' : 'var(--text-4)'}">
+          ${s.intro || '未填写'}
+        </div>
+      </div>
+
+      <div class="info-item">
+        <div class="info-item__k">店铺照片（${photos.length}）</div>
+        <div class="photo-row">
+          ${photos.map(p => `<img src="${p}">`).join('')}
+        </div>
+      </div>
+
+      <div class="info-item">
+        <div class="info-item__k">提交时间</div>
+        <div class="info-item__v" style="color:var(--text-3);font-size:13px">${s.submittedAt}</div>
+      </div>
+
+      ${s.reviewedAt ? `
+      <div class="info-item">
+        <div class="info-item__k">${s.rejectReason ? '驳回时间' : '通过时间'}</div>
+        <div class="info-item__v" style="color:var(--text-3);font-size:13px">
+          ${s.reviewedAt} · ${s.reviewer}
+        </div>
+      </div>` : ''}
+
+      ${s.rejectReason ? `
+      <div class="alert alert--danger mt-12">
+        <span>✕</span>
+        <span>驳回原因：${s.rejectReason}</span>
+      </div>` : ''}
+    </div>
+
+    ${status === 'pending' ? `
+    <div class="dp__foot">
+      <button class="btn btn--danger flex-1" onclick="openReject()">驳回</button>
+      <button class="btn btn--primary flex-1" onclick="approve()">通过并上线</button>
+    </div>` : `
+    <div class="dp__foot">
+      <div class="text-12 text-3" style="padding:8px 0">该申请已处理完毕</div>
+    </div>`}
+  `;
+}
+
+/* ---------- 审批 ---------- */
+function approve() {
+  if (!current) return;
+  if (!confirm(`确定通过「${current.name}」的入驻申请？通过后该店铺即可发布菜品。`)) return;
+
+  const s = current;
+  s.reviewedAt = now();
+  s.reviewer = '平台运营';
+
+  RECORDS.pending = RECORDS.pending.filter(x => x.id !== s.id);
+  RECORDS.approved.unshift(s);
+  MOCK.pendingShops = MOCK.pendingShops.filter(x => x.id !== s.id);
+
+  // 加入正式店铺列表
+  MOCK.shops.push({
+    id: s.id, name: s.name, logo: s.logo, cover: s.cover,
+    address: s.address, city: s.city, district: s.district,
+    lat: 30.65, lng: 104.06, distance: 2.5,
+    phone: s.phone, hours: s.hours, cuisine: s.cuisine,
+    intro: s.intro, status: 'normal', weight: 0, pinned: false,
+    canPostToday: true, lastPostAt: '', intervalHours: 24, dailyLimit: 1,
+    stats: { dishes: 0, views: 0, likes: 0, checkins: 0 }
+  });
+
+  current = null;
+  render();
+  toast(`已通过「${s.name}」，店铺已上线`);
+  track('admin_approve_shop', { shopId: s.id });
+}
+
+let rejecting = null;
+function openReject() {
+  rejecting = current;
+  document.getElementById('rejectReason').value = '';
+  document.getElementById('rejectModal').classList.add('is-open');
+}
+
+function closeReject() {
+  document.getElementById('rejectModal').classList.remove('is-open');
+}
+
+function doReject() {
+  const reason = document.getElementById('rejectReason').value.trim();
+  if (!reason) { toast('请填写驳回原因'); return; }
+
+  const s = rejecting;
+  s.reviewedAt = now();
+  s.reviewer = '平台运营';
+  s.rejectReason = reason;
+
+  RECORDS.pending = RECORDS.pending.filter(x => x.id !== s.id);
+  RECORDS.rejected.unshift(s);
+  MOCK.pendingShops = MOCK.pendingShops.filter(x => x.id !== s.id);
+
+  closeReject();
+  current = null;
+  render();
+  toast(`已驳回「${s.name}」`);
+  track('admin_reject_shop', { shopId: s.id, reason });
+}
+
+function now() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+document.getElementById('statusSel').addEventListener('change', e => {
+  status = e.target.value;
+  current = null;
+  render();
+});
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('is-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-show'), 1800);
+}
+
+function track(event, data) { console.log('[track]', event, data); }
+</script>
+</body>
+</html>

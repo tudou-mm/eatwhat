@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>发布规则配置 · 平台端</title>
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  .rule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+
+  .rule-card {
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg);
+    padding: 22px;
+  }
+
+  .rule-card__title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .rule-card__desc { font-size: 12px; color: var(--text-3); margin-bottom: 18px; }
+
+  .rule-line { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .rule-line__label { font-size: 13px; color: var(--text-2); width: 76px; flex-shrink: 0; }
+
+  .unit { font-size: 13px; color: var(--text-3); }
+
+  .toast {
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-80px);
+    background: #1A1A1A; color: #fff; padding: 10px 20px; border-radius: var(--radius);
+    font-size: 13px; z-index: 200; opacity: 0; transition: all .3s;
+    box-shadow: var(--shadow-lg);
+  }
+  .toast.is-show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  .override-tag {
+    font-size: 11px; padding: 2px 7px; border-radius: 4px;
+    background: #FFF7E6; color: #D46B08;
+  }
+  .default-tag {
+    font-size: 11px; padding: 2px 7px; border-radius: 4px;
+    background: var(--bg-hover); color: var(--text-3);
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar__logo"><div class="sidebar__logo-dot"></div><span>吃什么 · 平台</span></div>
+    <nav class="sidebar__nav">
+      <a class="nav-item" href="dashboard.html">数据概览</a>
+      <a class="nav-item" href="audit-shops.html">商家审核 <span class="nav-item__badge">2</span></a>
+      <a class="nav-item" href="shops.html">店铺管理</a>
+      <a class="nav-item" href="contents.html">内容管理</a>
+      <a class="nav-item" href="ranking.html">推荐排名</a>
+      <a class="nav-item is-active" href="rules.html">发布规则</a>
+      <a class="nav-item" href="config.html">价格档 / 标签</a>
+      <a class="nav-item" href="users.html">用户管理</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar__title">发布规则配置</div>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__user">
+        <div class="avatar">运</div>
+        <span style="font-size:13px">平台运营</span>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <div class="alert alert--warning mb-20">
+        <span>⚠️</span>
+        <span>规则修改<strong>不影响已发布的记录</strong>，从下一次发布开始生效。</span>
+      </div>
+
+      <!-- 全局默认 -->
+      <div class="rule-grid">
+        <div class="rule-card">
+          <div class="rule-card__title">全局默认规则</div>
+          <div class="rule-card__desc">所有店铺的兜底规则，未单独配置的店铺走这套</div>
+
+          <div class="rule-line">
+            <span class="rule-line__label">发布间隔</span>
+            <input class="num-input" type="number" id="gInterval" value="24" min="1" max="168">
+            <span class="unit">小时</span>
+          </div>
+
+          <div class="rule-line">
+            <span class="rule-line__label">每日上限</span>
+            <input class="num-input" type="number" id="gLimit" value="1" min="1" max="10">
+            <span class="unit">条</span>
+          </div>
+
+          <button class="btn btn--primary mt-8" onclick="saveGlobal()">保存默认规则</button>
+        </div>
+
+        <div class="rule-card">
+          <div class="rule-card__title">规则说明</div>
+          <div class="rule-card__desc">当前生效逻辑</div>
+          <div class="text-13" style="line-height:2.1;color:var(--text-2)">
+            <div>· 发布间隔：距上次发布需满 N 小时才可再发</div>
+            <div>· 每日上限：单店单日最多发布 N 条</div>
+            <div>· 两者同时生效，任一不满足则拦截</div>
+            <div>· 单独配置优先级高于全局默认</div>
+            <div>· 冷却状态在商家端工作台显示倒计时</div>
+          </div>
+          <div class="alert alert--info mt-16">
+            <span>ⓘ</span>
+            <span>默认「24 小时 / 1 条」即：每店每天一条</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 单独配置 -->
+      <div class="card">
+        <div class="card__head">
+          <div class="card__title">单独配置</div>
+          <div class="card__subtitle">覆盖全局默认，用于活动店铺或新店扶持</div>
+          <div class="card__spacer"></div>
+          <input class="input" placeholder="搜索店铺名" style="width:200px;height:32px;font-size:13px"
+                 id="searchInput" oninput="render()">
+        </div>
+
+        <table class="table">
+          <thead>
+            <tr>
+              <th>店铺</th>
+              <th style="width:120px">地区</th>
+              <th style="width:160px">发布间隔</th>
+              <th style="width:140px">每日上限</th>
+              <th style="width:120px">今日状态</th>
+              <th style="width:100px">操作</th>
+            </tr>
+          </thead>
+          <tbody id="ruleBody"></tbody>
+        </table>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="../assets/data/mock.js"></script>
+<script src="../assets/js/api.js"></script>
+<script>
+const GLOBAL = { interval: 24, limit: 1 };
+
+function render() {
+  const kw = document.getElementById('searchInput').value.trim();
+  let list = MOCK.shops;
+  if (kw) list = list.filter(s => s.name.includes(kw));
+
+  const body = document.getElementById('ruleBody');
+  if (!list.length) {
+    body.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty__icon">🔍</div>' +
+      '<div class="empty__text">没有匹配的店铺</div></div></td></tr>';
+    return;
+  }
+
+  body.innerHTML = list.map(s => {
+    const isOverride = s.intervalHours !== GLOBAL.interval || s.dailyLimit !== GLOBAL.limit;
+    return `
+    <tr>
+      <td>
+        <div class="flex items-center gap-10">
+          <div style="width:32px;height:32px;border-radius:7px;overflow:hidden;background:var(--bg-hover);flex-shrink:0">
+            <img src="${s.logo}" style="width:100%;height:100%;object-fit:cover">
+          </div>
+          <div>
+            <div class="text-13 fw-500">${s.name}</div>
+            <div class="text-12 text-3">${s.cuisine}</div>
+          </div>
+        </div>
+      </td>
+      <td class="text-13 text-2">${s.city}${s.district}</td>
+      <td>
+        <div class="flex items-center gap-6">
+          <input class="num-input" type="number" value="${s.intervalHours}" min="1" max="168"
+                 style="width:60px" onchange="setRule('${s.id}','intervalHours',this.value)">
+          <span class="text-12 text-3">小时</span>
+          ${s.intervalHours !== GLOBAL.interval ? '<span class="override-tag">自定义</span>' : ''}
+        </div>
+      </td>
+      <td>
+        <div class="flex items-center gap-6">
+          <input class="num-input" type="number" value="${s.dailyLimit}" min="1" max="10"
+                 style="width:60px" onchange="setRule('${s.id}','dailyLimit',this.value)">
+          <span class="text-12 text-3">条</span>
+          ${s.dailyLimit !== GLOBAL.limit ? '<span class="override-tag">自定义</span>' : ''}
+        </div>
+      </td>
+      <td>
+        ${s.canPostToday
+          ? '<span class="tag tag--warning">今日未发</span>'
+          : '<span class="tag tag--success">今日已发</span>'}
+      </td>
+      <td>
+        <button class="btn btn--text btn--sm" onclick="resetShop('${s.id}')">重置默认</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function setRule(id, key, val) {
+  const s = MOCK.getShop(id);
+  const v = Number(val);
+  if (!v || v < 1) { toast('请输入大于 0 的数值'); render(); return; }
+  s[key] = v;
+  toast(`「${s.name}」规则已更新，从下次发布生效`);
+  render();
+}
+
+function resetShop(id) {
+  const s = MOCK.getShop(id);
+  s.intervalHours = GLOBAL.interval;
+  s.dailyLimit = GLOBAL.limit;
+  toast(`「${s.name}」已恢复全局默认`);
+  render();
+}
+
+function saveGlobal() {
+  GLOBAL.interval = Number(document.getElementById('gInterval').value) || 24;
+  GLOBAL.limit = Number(document.getElementById('gLimit').value) || 1;
+  toast(`全局默认已保存：${GLOBAL.interval} 小时 / ${GLOBAL.limit} 条`);
+  render();
+}
+
+let toastTimer;
+function toast(msg) {
+  let el = document.querySelector('.toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add('is-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-show'), 1800);
+}
+
+render();
+</script>
+</body>
+</html>

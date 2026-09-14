@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>用户管理 · 平台端</title>
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  .u-cell { display: flex; gap: 10px; align-items: center; }
+  .u-cell__avatar {
+    width: 38px; height: 38px; border-radius: 50%; overflow: hidden;
+    background: var(--bg-hover); flex-shrink: 0;
+  }
+  .u-cell__avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .u-cell__name { font-size: 14px; font-weight: 500; margin-bottom: 2px; }
+  .u-cell__meta { font-size: 12px; color: var(--text-3); }
+
+  .ops { display: flex; gap: 4px; flex-wrap: wrap; }
+
+  .status-dot { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+  .status-dot::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }
+  .status-dot--normal::before { background: var(--success); }
+  .status-dot--warned::before { background: var(--warning); }
+  .status-dot--banned::before { background: var(--danger); }
+  .status-dot--normal { color: var(--success); }
+  .status-dot--warned { color: var(--warning); }
+  .status-dot--banned { color: var(--danger); }
+
+  .risk {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 12px; color: var(--danger); font-weight: 500;
+  }
+  .risk--ok { color: var(--text-3); font-weight: 400; }
+
+  .toast {
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-80px);
+    background: #1A1A1A; color: #fff; padding: 10px 20px; border-radius: var(--radius);
+    font-size: 13px; z-index: 200; opacity: 0; transition: all .3s;
+  }
+  .toast.is-show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  .drawer-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,.4);
+    display: none; z-index: 100; justify-content: flex-end;
+  }
+  .drawer-mask.is-open { display: flex; }
+  .drawer {
+    width: 460px; background: #fff; height: 100%; overflow-y: auto;
+    display: flex; flex-direction: column;
+  }
+  .drawer__head {
+    padding: 20px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  .drawer__title { font-size: 16px; font-weight: 600; }
+  .drawer__close {
+    margin-left: auto; width: 28px; height: 28px; border-radius: 50%;
+    background: var(--bg-hover); display: flex; align-items: center;
+    justify-content: center; cursor: pointer; color: var(--text-2);
+  }
+  .drawer__body { padding: 24px; flex: 1; }
+  .drawer__foot {
+    padding: 16px 24px; border-top: 1px solid var(--border);
+    display: flex; gap: 10px; flex-shrink: 0;
+  }
+
+  .u-head { display: flex; gap: 14px; align-items: center; margin-bottom: 20px; }
+  .u-head__avatar { width: 56px; height: 56px; border-radius: 50%; overflow: hidden; background: var(--bg-hover); }
+  .u-head__avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .u-head__name { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+  .u-head__id { font-size: 12px; color: var(--text-3); }
+
+  .dt-stats {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    padding: 16px 0; border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border); margin: 0 0 18px;
+  }
+  .dt-stat { text-align: center; }
+  .dt-stat__num { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .dt-stat__label { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+  .dt-row { display: flex; font-size: 13px; margin-bottom: 12px; }
+  .dt-row__k { color: var(--text-3); width: 80px; flex-shrink: 0; }
+  .dt-row__v { flex: 1; word-break: break-all; }
+
+  .cmt-item { padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .cmt-item:last-child { border-bottom: none; }
+  .cmt-item__txt { font-size: 13px; line-height: 1.6; margin-bottom: 6px; }
+  .cmt-item__meta { font-size: 11px; color: var(--text-3); display: flex; gap: 10px; }
+  .cmt-item__bad {
+    font-size: 11px; color: var(--danger); background: #FFF5F5;
+    padding: 1px 6px; border-radius: 4px;
+  }
+
+  .danger-zone { background: #FFF5F5; border-radius: var(--radius); padding: 16px; margin-top: 20px; }
+  .danger-zone__title { font-size: 13px; font-weight: 500; color: var(--danger); margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar__logo"><div class="sidebar__logo-dot"></div><span>吃什么 · 平台</span></div>
+    <nav class="sidebar__nav">
+      <a class="nav-item" href="dashboard.html">数据概览</a>
+      <a class="nav-item" href="audit-shops.html">商家审核 <span class="nav-item__badge">2</span></a>
+      <a class="nav-item" href="shops.html">店铺管理</a>
+      <a class="nav-item" href="contents.html">内容管理</a>
+      <a class="nav-item" href="ranking.html">推荐排名</a>
+      <a class="nav-item" href="rules.html">发布规则</a>
+      <a class="nav-item" href="config.html">价格档 / 标签</a>
+      <a class="nav-item is-active" href="users.html">用户管理</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar__title">用户管理</div>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__user">
+        <div class="avatar">运</div>
+        <span style="font-size:13px">平台运营</span>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <div class="alert alert--warning mb-20">
+        <span>⚠️</span>
+        <span>本页主要处理<b>恶意刷差评</b>：先警告 → 再限制评论 → 最后封号。处罚同时保留用户历史评论，不做物理删除。</span>
+      </div>
+
+      <div class="page-head">
+        <div>
+          <div class="page-head__title">全部用户</div>
+          <div class="page-head__desc">按举报次数排序，风险用户排在前面</div>
+        </div>
+        <div class="page-head__spacer"></div>
+        <span class="tag tag--success">正常 <span id="cNormal">0</span></span>
+        <span class="tag tag--warning">已警告 <span id="cWarned">0</span></span>
+        <span class="tag tag--danger">已封禁 <span id="cBanned">0</span></span>
+      </div>
+
+      <div class="card">
+        <div class="card__head">
+          <input class="input" placeholder="搜索用户名 / 用户ID" style="width:220px;height:32px;font-size:13px"
+                 id="kw" oninput="render()">
+          <div class="card__spacer"></div>
+          <select class="select" style="width:120px;height:32px;font-size:13px" id="fs" onchange="render()">
+            <option value="">全部状态</option>
+            <option value="normal">正常</option>
+            <option value="warned">已警告</option>
+            <option value="banned">已封禁</option>
+          </select>
+          <label class="check-chip" style="height:32px">
+            <input type="checkbox" id="onlyRisk" onchange="render()">
+            只看有举报记录
+          </label>
+        </div>
+
+        <table class="table">
+          <thead>
+            <tr>
+              <th>用户</th>
+              <th style="width:100px">评论数</th>
+              <th style="width:110px">被举报次数</th>
+              <th style="width:100px">状态</th>
+              <th style="width:120px">注册时间</th>
+              <th style="width:210px">操作</th>
+            </tr>
+          </thead>
+          <tbody id="body"></tbody>
+        </table>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- 用户详情抽屉 -->
+<div class="drawer-mask" id="drawerMask" onclick="if(event.target===this)closeDrawer()">
+  <div class="drawer">
+    <div class="drawer__head">
+      <div class="drawer__title">用户详情</div>
+      <div class="drawer__close" onclick="closeDrawer()">×</div>
+    </div>
+    <div class="drawer__body" id="drawerBody"></div>
+    <div class="drawer__foot">
+      <button class="btn btn--ghost flex-1" onclick="closeDrawer()">关闭</button>
+      <button class="btn btn--outline" onclick="viewComments()">查看全部评论</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="../assets/data/mock.js"></script>
+<script src="../assets/js/api.js"></script>
+<script>
+let current = null;
+
+/* 模拟：被平台判定为恶意差评的评论 id */
+const BAD_COMMENT_IDS = ['c_002'];
+
+(function init() { render(); })();
+
+function render() {
+  const kw = document.getElementById('kw').value.trim();
+  const fs = document.getElementById('fs').value;
+  const onlyRisk = document.getElementById('onlyRisk').checked;
+
+  const all = MOCK.users;
+  document.getElementById('cNormal').textContent = all.filter(u => u.status === 'normal').length;
+  document.getElementById('cWarned').textContent = all.filter(u => u.status === 'warned').length;
+  document.getElementById('cBanned').textContent = all.filter(u => u.status === 'banned').length;
+
+  let list = all
+    .filter(u => !kw || u.name.includes(kw) || u.id.includes(kw))
+    .filter(u => !fs || u.status === fs)
+    .filter(u => !onlyRisk || u.reports > 0)
+    .sort((a, b) => b.reports - a.reports);
+
+  const body = document.getElementById('body');
+  if (!list.length) {
+    body.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty__icon">👤</div>' +
+      '<div class="empty__text">没有匹配的用户</div></div></td></tr>';
+    return;
+  }
+
+  const statusText = { normal: '正常', warned: '已警告', banned: '已封禁' };
+
+  body.innerHTML = list.map(u => `
+    <tr>
+      <td>
+        <div class="u-cell">
+          <div class="u-cell__avatar"><img src="${u.avatar}"></div>
+          <div>
+            <div class="u-cell__name">${u.name}</div>
+            <div class="u-cell__meta">${u.id}</div>
+          </div>
+        </div>
+      </td>
+      <td class="text-13 text-2">${u.comments}</td>
+      <td>
+        ${u.reports > 0
+          ? `<span class="risk">⚠ ${u.reports} 次</span>`
+          : '<span class="risk risk--ok">—</span>'}
+      </td>
+      <td><span class="status-dot status-dot--${u.status}">${statusText[u.status]}</span></td>
+      <td class="text-12 text-3">${u.at}</td>
+      <td>
+        <div class="ops">
+          <button class="btn btn--text btn--sm" onclick="openDetail('${u.id}')">详情</button>
+          ${u.status === 'normal'
+            ? `<button class="btn btn--text btn--sm" style="color:var(--warning)" onclick="setStatus('${u.id}','warned')">警告</button>`
+            : `<button class="btn btn--text btn--sm" style="color:var(--success)" onclick="setStatus('${u.id}','normal')">解除</button>`}
+          ${u.status === 'banned'
+            ? ''
+            : `<button class="btn btn--text btn--sm" style="color:var(--danger)" onclick="setStatus('${u.id}','banned')">封号</button>`}
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+function setStatus(id, st) {
+  const u = MOCK.users.find(x => x.id === id);
+  if (!u) return;
+
+  const tips = {
+    normal: `确定解除对「${u.name}」的全部限制？该用户将恢复正常评论权限。`,
+    warned: `确定警告「${u.name}」？将向其推送违规提醒，并记录一次警告。`,
+    banned: `确定封禁「${u.name}」？该用户将无法发表评论、点赞和收藏，历史内容保留。`
+  };
+  if (!confirm(tips[st])) return;
+
+  const names = { normal: '已解除限制', warned: '已警告', banned: '已封禁' };
+  u.status = st;
+  render();
+  if (current && current.id === id) openDetail(id);
+  toast(`${names[st]}：${u.name}`);
+  track('admin_user_status', { userId: id, status: st });
+}
+
+function openDetail(id) {
+  current = MOCK.users.find(x => x.id === id);
+  const u = current;
+  if (!u) return;
+
+  const statusText = { normal: '正常', warned: '已警告', banned: '已封禁' }[u.status];
+
+  const myComments = MOCK.comments.filter(c => c.userId === u.id);
+
+  document.getElementById('drawerBody').innerHTML = `
+    <div class="u-head">
+      <div class="u-head__avatar"><img src="${u.avatar}"></div>
+      <div>
+        <div class="u-head__name">${u.name}</div>
+        <div class="u-head__id">${u.id} · 注册于 ${u.at}</div>
+      </div>
+      <div style="margin-left:auto">
+        <span class="status-dot status-dot--${u.status}">${statusText}</span>
+      </div>
+    </div>
+
+    <div class="dt-stats">
+      <div class="dt-stat"><div class="dt-stat__num">${u.comments}</div><div class="dt-stat__label">累计评论</div></div>
+      <div class="dt-stat">
+        <div class="dt-stat__num" style="${u.reports > 0 ? 'color:var(--danger)' : ''}">${u.reports}</div>
+        <div class="dt-stat__label">被举报</div>
+      </div>
+      <div class="dt-stat"><div class="dt-stat__num">${myComments.length}</div><div class="dt-stat__label">本页可见评论</div></div>
+    </div>
+
+    <div class="dt-row"><span class="dt-row__k">当前状态</span><span class="dt-row__v">${statusText}</span></div>
+    <div class="dt-row"><span class="dt-row__k">评论权限</span>
+      <span class="dt-row__v" style="color:${u.status === 'banned' ? 'var(--danger)' : 'var(--success)'}">
+        ${u.status === 'banned' ? '已禁止评论' : '正常'}
+      </span>
+    </div>
+    <div class="dt-row"><span class="dt-row__k">风险等级</span>
+      <span class="dt-row__v" style="color:${u.reports >= 3 ? 'var(--danger)' : (u.reports > 0 ? 'var(--warning)' : 'var(--success)')}">
+        ${u.reports >= 3 ? '高 — 建议封号' : (u.reports > 0 ? '中 — 建议观察' : '低')}
+      </span>
+    </div>
+
+    ${u.reports > 0 ? `
+      <div class="alert alert--warning mt-16 mb-16">
+        <span>⚠️</span>
+        <span>该用户已有 ${u.reports} 次被举报记录，其中包含<b>恶意刷差评</b>。平台规则：3 次及以上可直接封号。</span>
+      </div>
+    ` : ''}
+
+    <div class="mt-20">
+      <div class="text-13 fw-500 mb-8">最近评论</div>
+      ${myComments.length ? myComments.map(c => {
+        const dish = MOCK.getDish(c.dishId);
+        const isBad = BAD_COMMENT_IDS.includes(c.id);
+        return `
+          <div class="cmt-item">
+            <div class="cmt-item__txt">
+              ${c.content}
+              ${isBad ? '<span class="cmt-item__bad">已被举报 · 待处理</span>' : ''}
+            </div>
+            <div class="cmt-item__meta">
+              <span>${dish ? dish.name : '未知菜品'}</span>
+              <span>${c.at}</span>
+            </div>
+          </div>`;
+      }).join('') : '<div class="text-13 text-3">暂无可见评论</div>'}
+    </div>
+
+    <div class="danger-zone">
+      <div class="danger-zone__title">违规处理</div>
+      <div class="text-12 text-3 mb-12">三级处理：警告 → 限制评论 → 封禁账号</div>
+      <div class="flex gap-8 flex-wrap">
+        <button class="btn btn--sm btn--outline" style="color:var(--warning)" onclick="setStatus('${u.id}','warned')">警告</button>
+        <button class="btn btn--sm btn--outline" style="color:var(--danger)" onclick="setStatus('${u.id}','banned')">封号</button>
+        ${u.status !== 'normal'
+          ? `<button class="btn btn--sm btn--outline" style="color:var(--success)" onclick="setStatus('${u.id}','normal')">解除全部限制</button>`
+          : ''}
+        <a class="btn btn--sm btn--outline" href="contents.html">去内容管理处理差评</a>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('drawerMask').classList.add('is-open');
+}
+
+function closeDrawer() {
+  document.getElementById('drawerMask').classList.remove('is-open');
+  current = null;
+}
+
+function viewComments() {
+  if (!current) return;
+  const n = MOCK.comments.filter(c => c.userId === current.id).length;
+  toast(`该用户共 ${n} 条评论，可在内容管理页查看完整列表`);
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('is-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-show'), 1900);
+}
+
+function track(event, data) { console.log('[track]', event, data); }
+</script>
+</body>
+</html>

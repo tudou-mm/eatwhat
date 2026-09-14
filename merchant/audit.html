@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>审核状态 · 商家端</title>
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  body { background: var(--bg-page); }
+
+  .wrap { max-width: 620px; margin: 0 auto; padding: 60px 24px; }
+
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 40px; justify-content: center; }
+  .brand__dot { width: 30px; height: 30px; border-radius: 9px; background: var(--brand-gradient); }
+  .brand__name { font-size: 15px; font-weight: 600; }
+
+  .status-card {
+    background: #fff; border-radius: var(--radius-lg);
+    border: 1px solid var(--border); padding: 44px 32px; text-align: center;
+  }
+
+  .status-icon {
+    width: 72px; height: 72px; border-radius: 50%; margin: 0 auto 20px;
+    display: flex; align-items: center; justify-content: center; font-size: 32px;
+  }
+  .status-icon--pending { background: #FFF7E6; }
+  .status-icon--approved { background: #E8FFF3; }
+  .status-icon--rejected { background: #FFF1F0; }
+
+  .status-title { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+  .status-desc { font-size: 14px; color: var(--text-3); line-height: 1.8; margin-bottom: 26px; }
+
+  .reject-box {
+    background: #FFF1F0; border-radius: var(--radius); padding: 16px;
+    text-align: left; margin-bottom: 26px;
+  }
+  .reject-box__label { font-size: 12px; color: var(--danger); font-weight: 500; margin-bottom: 6px; }
+  .reject-box__text { font-size: 13px; color: #8C1A1A; line-height: 1.7; }
+
+  .info-list {
+    text-align: left; background: #FAFAFB; border-radius: var(--radius);
+    padding: 18px; margin-bottom: 26px;
+  }
+  .info-row { display: flex; font-size: 13px; margin-bottom: 10px; }
+  .info-row:last-child { margin-bottom: 0; }
+  .info-row__k { color: var(--text-3); width: 84px; flex-shrink: 0; }
+  .info-row__v { color: var(--text-1); flex: 1; }
+
+  .timeline { text-align: left; margin: 30px 0 10px; }
+
+  .tl-item { display: flex; gap: 12px; position: relative; padding-bottom: 22px; }
+  .tl-item:last-child { padding-bottom: 0; }
+  .tl-item::before {
+    content: ''; position: absolute; left: 7px; top: 18px; bottom: 0;
+    width: 1px; background: var(--border);
+  }
+  .tl-item:last-child::before { display: none; }
+
+  .tl-dot {
+    width: 15px; height: 15px; border-radius: 50%; flex-shrink: 0;
+    margin-top: 3px; background: var(--bg-hover);
+    border: 2px solid var(--border);
+  }
+  .tl-item.is-done .tl-dot { background: var(--success); border-color: var(--success); }
+  .tl-item.is-active .tl-dot { background: var(--brand); border-color: var(--brand); }
+  .tl-item.is-wait .tl-dot { background: #fff; border-color: var(--border-strong); }
+
+  .tl-title { font-size: 14px; font-weight: 500; margin-bottom: 3px; }
+  .tl-time { font-size: 12px; color: var(--text-4); }
+  .tl-item.is-wait .tl-title { color: var(--text-4); font-weight: 400; }
+
+  .demo-switch {
+    display: flex; gap: 8px; justify-content: center; margin-top: 28px;
+    padding-top: 24px; border-top: 1px dashed var(--border);
+  }
+
+  .toast {
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-80px);
+    background: #1A1A1A; color: #fff; padding: 10px 20px; border-radius: var(--radius);
+    font-size: 13px; z-index: 200; opacity: 0; transition: all .3s;
+  }
+  .toast.is-show { transform: translateX(-50%) translateY(0); opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="brand">
+    <div class="brand__dot"></div>
+    <div class="brand__name">吃什么 · 商家端</div>
+  </div>
+
+  <div class="status-card" id="statusCard"></div>
+
+  <div class="demo-switch">
+    <span class="text-12 text-4" style="align-self:center">原型演示：</span>
+    <button class="btn btn--sm btn--outline" onclick="setStatus('pending')">待审核</button>
+    <button class="btn btn--sm btn--outline" onclick="setStatus('approved')">已通过</button>
+    <button class="btn btn--sm btn--outline" onclick="setStatus('rejected')">已驳回</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="../assets/data/mock.js"></script>
+<script src="../assets/js/api.js"></script>
+<script>
+let applying = null;
+let status = 'pending';
+
+(function init() {
+  const raw = sessionStorage.getItem('applying');
+  if (raw) applying = JSON.parse(raw);
+  render();
+})();
+
+function setStatus(s) {
+  status = s;
+  render();
+}
+
+function render() {
+  const name = applying ? applying.name : (MOCK.getShop(MOCK.currentMerchant.shopId)?.name || '蜀香小馆');
+  const card = document.getElementById('statusCard');
+
+  const infoHtml = applying ? `
+    <div class="info-list">
+      <div class="info-row"><span class="info-row__k">店铺名称</span><span class="info-row__v">${applying.name}</span></div>
+      <div class="info-row"><span class="info-row__k">菜系</span><span class="info-row__v">${applying.cuisine}</span></div>
+      <div class="info-row"><span class="info-row__k">地址</span><span class="info-row__v">${applying.address}</span></div>
+      <div class="info-row"><span class="info-row__k">电话</span><span class="info-row__v">${applying.phone}</span></div>
+      <div class="info-row"><span class="info-row__k">营业时间</span><span class="info-row__v">${applying.hours}</span></div>
+      <div class="info-row"><span class="info-row__k">提交时间</span><span class="info-row__v">${applying.submittedAt}</span></div>
+    </div>
+  ` : '';
+
+  if (status === 'pending') {
+    card.innerHTML = `
+      <div class="status-icon status-icon--pending">⏳</div>
+      <div class="status-title">资料审核中</div>
+      <div class="status-desc">我们会在 1 个工作日内完成审核<br>通过后即可发布今日新菜</div>
+      ${infoHtml}
+      <div class="timeline">
+        <div class="tl-item is-done">
+          <div class="tl-dot"></div>
+          <div><div class="tl-title">提交资料</div><div class="tl-time">已完成</div></div>
+        </div>
+        <div class="tl-item is-active">
+          <div class="tl-dot"></div>
+          <div><div class="tl-title">平台审核中</div><div class="tl-time">预计 1 个工作日内</div></div>
+        </div>
+        <div class="tl-item is-wait">
+          <div class="tl-dot"></div>
+          <div><div class="tl-title">审核通过，开始发布</div><div class="tl-time">待完成</div></div>
+        </div>
+      </div>
+      <button class="btn btn--outline btn--lg btn--block mt-20" onclick="refresh()">刷新审核状态</button>
+    `;
+  } else if (status === 'approved') {
+    card.innerHTML = `
+      <div class="status-icon status-icon--approved">✓</div>
+      <div class="status-title">审核通过</div>
+      <div class="status-desc">${name} 已上线<br>现在可以发布今天的菜品了</div>
+      <div class="timeline">
+        <div class="tl-item is-done">
+          <div class="tl-dot"></div>
+          <div><div class="tl-title">提交资料</div><div class="tl-time">已完成</div></div>
+        </div>
+        <div class="tl-item is-done">
+          <div class="tl-dot"></div>
+          <div><div class="tl-title">平台审核</div><div class="tl-time">已通过</div></div>
+        </div>
+        <div class="tl-item is-active">
+          <div class="tl-dot"></div>
+          <div><div class="tl-title">开始发布菜品</div><div class="tl-time">现在就可以</div></div>
+        </div>
+      </div>
+      <button class="btn btn--primary btn--lg btn--block mt-20" onclick="location.href='dashboard.html'">
+        进入工作台
+      </button>
+    `;
+  } else {
+    card.innerHTML = `
+      <div class="status-icon status-icon--rejected">✕</div>
+      <div class="status-title">审核未通过</div>
+      <div class="status-desc">资料需要修改后重新提交</div>
+      <div class="reject-box">
+        <div class="reject-box__label">驳回原因</div>
+        <div class="reject-box__text">
+          门头图不清晰，无法辨认店铺招牌。请重新上传一张能看清店名的门头照，并确保地址与实际经营地址一致。
+        </div>
+      </div>
+      ${infoHtml}
+      <div class="flex gap-12">
+        <button class="btn btn--ghost btn--lg flex-1" onclick="location.href='apply.html'">返回修改</button>
+        <button class="btn btn--primary btn--lg flex-1" onclick="location.href='apply.html'">重新提交</button>
+      </div>
+    `;
+  }
+}
+
+function refresh() {
+  toast('审核仍在进行中，请耐心等待');
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('is-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-show'), 1800);
+}
+</script>
+</body>
+</html>

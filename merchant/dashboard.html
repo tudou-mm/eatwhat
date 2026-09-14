@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工作台 · 商家端</title>
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  .status-card {
+    border-radius: var(--radius-lg); padding: 24px; margin-bottom: 20px;
+    border: 1px solid var(--border); position: relative; overflow: hidden;
+  }
+
+  .status-card--can {
+    background: linear-gradient(135deg, #FFF5F7 0%, #FFFFFF 65%);
+    border-color: #FFD9E1;
+  }
+  .status-card--wait {
+    background: linear-gradient(135deg, #F5F7FA 0%, #FFFFFF 65%);
+  }
+
+  .sc__label { font-size: 13px; color: var(--text-3); margin-bottom: 8px; }
+  .sc__title { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+  .sc__sub { font-size: 13px; color: var(--text-3); }
+
+  .countdown {
+    font-size: 38px; font-weight: 600; color: var(--brand);
+    letter-spacing: 2px; font-variant-numeric: tabular-nums;
+    margin: 16px 0 6px; line-height: 1.1;
+  }
+
+  .cd-label { font-size: 12px; color: var(--text-3); }
+
+  .today-preview {
+    display: flex; gap: 14px; align-items: center;
+    background: #fff; border-radius: var(--radius); padding: 12px;
+    border: 1px solid var(--border); margin-top: 18px;
+  }
+
+  .tp__img {
+    width: 56px; height: 74px; border-radius: 8px; overflow: hidden;
+    background: var(--bg-hover); flex-shrink: 0;
+  }
+  .tp__img img { width: 100%; height: 100%; object-fit: cover; }
+  .tp__name { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+  .tp__meta { font-size: 12px; color: var(--text-3); }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+
+  .s-card {
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg);
+    padding: 18px 20px;
+  }
+  .s-card__label { font-size: 13px; color: var(--text-3); margin-bottom: 8px; }
+  .s-card__num { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .s-card__delta { font-size: 12px; margin-top: 4px; }
+  .s-card__delta--up { color: var(--success); }
+
+  .dish-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+
+  .dg-item {
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+    overflow: hidden; cursor: pointer; transition: all .15s;
+  }
+  .dg-item:hover { border-color: var(--brand); transform: translateY(-2px); box-shadow: var(--shadow); }
+
+  .dg-item__img {
+    aspect-ratio: 3/4; background: var(--bg-hover); position: relative;
+  }
+  .dg-item__img img { width: 100%; height: 100%; object-fit: cover; }
+  .dg-item__badge {
+    position: absolute; top: 6px; right: 6px; font-size: 10px;
+    background: rgba(0,0,0,.6); color: #fff; padding: 1px 6px; border-radius: 3px;
+  }
+  .dg-item__body { padding: 10px 12px; }
+  .dg-item__name { font-size: 13px; font-weight: 500; margin-bottom: 3px; }
+  .dg-item__meta { font-size: 11px; color: var(--text-3); }
+
+  .toast {
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-80px);
+    background: #1A1A1A; color: #fff; padding: 10px 20px; border-radius: var(--radius);
+    font-size: 13px; z-index: 200; opacity: 0; transition: all .3s;
+  }
+  .toast.is-show { transform: translateX(-50%) translateY(0); opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar__logo"><div class="sidebar__logo-dot"></div><span>吃什么 · 商家</span></div>
+    <nav class="sidebar__nav">
+      <a class="nav-item is-active" href="dashboard.html">工作台</a>
+      <a class="nav-item" href="publish.html">发布菜品</a>
+      <a class="nav-item" href="dishes.html">菜品管理</a>
+      <a class="nav-item" href="shop-info.html">店铺信息</a>
+      <a class="nav-item" href="comments.html">评论管理</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar__title">工作台</div>
+      <div class="topbar__spacer"></div>
+      <a class="btn btn--sm btn--outline" href="../client/shop.html?id=s_001" target="_blank">查看前台效果</a>
+      <div class="topbar__user">
+        <div class="avatar">蜀</div>
+        <span style="font-size:13px">蜀香小馆</span>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- 今日发布状态 -->
+      <div class="status-card status-card--wait" id="statusCard"></div>
+
+      <!-- 数据概览 -->
+      <div class="stat-grid">
+        <div class="s-card">
+          <div class="s-card__label">今日浏览</div>
+          <div class="s-card__num">128</div>
+          <div class="s-card__delta s-card__delta--up">↑ 12% 较昨日</div>
+        </div>
+        <div class="s-card">
+          <div class="s-card__label">今日点赞</div>
+          <div class="s-card__num">32</div>
+          <div class="s-card__delta s-card__delta--up">↑ 6% 较昨日</div>
+        </div>
+        <div class="s-card">
+          <div class="s-card__label">今日收藏</div>
+          <div class="s-card__num">15</div>
+          <div class="s-card__delta" style="color:var(--text-4)">持平</div>
+        </div>
+        <div class="s-card">
+          <div class="s-card__label">今日打卡</div>
+          <div class="s-card__num">7</div>
+          <div class="s-card__delta s-card__delta--up">↑ 3 人</div>
+        </div>
+      </div>
+
+      <!-- 我的菜品 -->
+      <div class="card">
+        <div class="card__head">
+          <div class="card__title">我的菜品</div>
+          <div class="card__subtitle">按发布时间倒序</div>
+          <div class="card__spacer"></div>
+          <a class="btn btn--sm btn--outline" href="dishes.html">全部菜品</a>
+        </div>
+        <div class="card__body">
+          <div class="dish-grid" id="dishGrid"></div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="../assets/data/mock.js"></script>
+<script src="../assets/js/api.js"></script>
+<script>
+let cdSecond = 0;
+let shop = null;
+
+(function init() {
+  shop = MOCK.getShop(MOCK.currentMerchant.shopId);
+  renderStatus();
+  renderDishes();
+})();
+
+function renderStatus() {
+  const card = document.getElementById('statusCard');
+
+  if (shop.canPostToday) {
+    card.className = 'status-card status-card--can';
+    card.innerHTML = `
+      <div class="sc__label">今日状态</div>
+      <div class="sc__title">今天还没发布新菜</div>
+      <div class="sc__sub">发布后 24 小时内无法再次发布，趁早发效果更好</div>
+      <a class="btn btn--primary btn--lg mt-20" href="publish.html" style="display:inline-flex">
+        ＋ 发布今日新菜
+      </a>
+    `;
+    return;
+  }
+
+  card.className = 'status-card status-card--wait';
+  const last = MOCK.getShopDishes(shop.id)[0];
+  const lastTime = shop.lastPostAt;
+
+  card.innerHTML = `
+    <div class="sc__label">今日状态</div>
+    <div class="fx-between flex-between">
+      <div>
+        <div class="sc__title">今日已发布</div>
+        <div class="sc__sub">发布时间 ${lastTime}</div>
+      </div>
+      <span class="tag tag--success">已发布</span>
+    </div>
+
+    <div class="countdown" id="cd">24 : 00 : 00</div>
+    <div class="cd-label">距离下次可发布</div>
+
+    ${last ? `
+      <div class="today-preview">
+        <div class="tp__img"><img src="${last.cover || last.media[0]}"></div>
+        <div style="flex:1;min-width:0">
+          <div class="tp__name">${last.name}</div>
+          <div class="tp__meta">${last.type === 'image' ? last.media.length + ' 张图' : '视频'}</div>
+        </div>
+        <a class="btn btn--sm btn--outline" href="dishes.html">编辑</a>
+      </div>
+    ` : ''}
+  `;
+
+  // 从"上次发布 + 间隔"算剩余
+  const intervalH = shop.intervalHours || 24;
+  const total = intervalH * 3600;
+  // 原型：假定距上次发布已过 15 分钟
+  cdSecond = total - 900;
+  tick();
+  setInterval(tick, 1000);
+}
+
+function tick() {
+  const el = document.getElementById('cd');
+  if (!el) return;
+  cdSecond = Math.max(0, cdSecond - 1);
+  const h = String(Math.floor(cdSecond / 3600)).padStart(2, '0');
+  const m = String(Math.floor(cdSecond % 3600 / 60)).padStart(2, '0');
+  const s = String(cdSecond % 60).padStart(2, '0');
+  el.textContent = `${h} : ${m} : ${s}`;
+}
+
+function renderDishes() {
+  const list = MOCK.getShopDishes(shop.id).slice(0, 8);
+  const grid = document.getElementById('dishGrid');
+
+  if (!list.length) {
+    grid.innerHTML = '<div class="empty" style="grid-column:1/-1"><div class="empty__icon">🍽</div>' +
+      '<div class="empty__text">还没有发布菜品</div>' +
+      '<div class="empty__hint">发布第一道菜，让附近的人看到你</div></div>';
+    return;
+  }
+
+  grid.innerHTML = list.map(d => {
+    const tier = MOCK.priceTiers.find(t => t.id === d.priceTierId);
+    return `
+      <div class="dg-item" onclick="location.href='dishes.html'">
+        <div class="dg-item__img">
+          <img src="${d.cover || d.media[0]}">
+          ${d.type === 'video' ? '<div class="dg-item__badge">▶</div>' : ''}
+        </div>
+        <div class="dg-item__body">
+          <div class="dg-item__name truncate">${d.name}</div>
+          <div class="dg-item__meta">
+            ♥ ${MOCK.fmtNum(d.stats.likes)} · ${MOCK.timeAgo(d.publishedAt)}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('is-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-show'), 1800);
+}
+</script>
+</body>
+</html>

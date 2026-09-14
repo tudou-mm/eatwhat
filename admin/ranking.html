@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>推荐排名管理 · 平台端</title>
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  .filter-bar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 20px; border-bottom: 1px solid var(--border);
+    background: #FAFAFB;
+  }
+
+  .rank-row { cursor: default; }
+  .rank-row.is-pinned { background: #FFF9FA; }
+
+  .rank-no {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border-radius: 6px;
+    background: var(--bg-hover); color: var(--text-2);
+    font-size: 13px; font-weight: 600;
+  }
+
+  .rank-no--top { background: var(--brand); color: #fff; }
+
+  .shop-cell { display: flex; align-items: center; gap: 10px; }
+
+  .shop-cell__logo {
+    width: 36px; height: 36px; border-radius: 8px; overflow: hidden;
+    background: var(--bg-hover); flex-shrink: 0;
+  }
+  .shop-cell__logo img { width: 100%; height: 100%; object-fit: cover; }
+
+  .shop-cell__name { font-size: 14px; font-weight: 500; }
+  .shop-cell__meta { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+
+  .pin-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 12px; padding: 4px 10px; border-radius: var(--radius-full);
+    background: var(--bg-hover); color: var(--text-2);
+    transition: all .15s;
+  }
+  .pin-btn:hover { background: #E8E9EB; }
+  .pin-btn.is-pinned { background: #FFF0F3; color: var(--brand); }
+
+  /* 预览抽屉 */
+  .preview-panel {
+    border-left: 1px solid var(--border);
+    background: #FAFAFB; padding: 20px; width: 300px; flex-shrink: 0;
+  }
+
+  .pv-row {
+    display: flex; gap: 10px; padding: 10px; background: #fff;
+    border-radius: 10px; margin-bottom: 8px; align-items: center;
+    border: 1px solid var(--border);
+  }
+
+  .pv-row__no {
+    width: 20px; height: 20px; border-radius: 5px; background: var(--bg-hover);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; color: var(--text-2); flex-shrink: 0;
+  }
+
+  .pv-row__no--top { background: var(--brand); color: #fff; }
+
+  .pv-row__img { width: 34px; height: 34px; border-radius: 7px; object-fit: cover; flex-shrink: 0; }
+
+  .split { display: flex; align-items: stretch; }
+
+  .rule-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+
+  .rule-box {
+    background: #FAFAFB; border-radius: var(--radius); padding: 16px;
+    border: 1px solid var(--border);
+  }
+
+  .rule-box__label { font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
+
+  .toast {
+    position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-80px);
+    background: #1A1A1A; color: #fff; padding: 10px 20px; border-radius: var(--radius);
+    font-size: 13px; z-index: 200; opacity: 0; transition: all .3s;
+    box-shadow: var(--shadow-lg);
+  }
+  .toast.is-show { transform: translateX(-50%) translateY(0); opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar__logo"><div class="sidebar__logo-dot"></div><span>吃什么 · 平台</span></div>
+    <nav class="sidebar__nav">
+      <a class="nav-item" href="dashboard.html">数据概览</a>
+      <a class="nav-item" href="audit-shops.html">商家审核 <span class="nav-item__badge">2</span></a>
+      <a class="nav-item" href="shops.html">店铺管理</a>
+      <a class="nav-item" href="contents.html">内容管理</a>
+      <a class="nav-item is-active" href="ranking.html">推荐排名</a>
+      <a class="nav-item" href="rules.html">发布规则</a>
+      <a class="nav-item" href="config.html">价格档 / 标签</a>
+      <a class="nav-item" href="users.html">用户管理</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar__title">推荐排名管理</div>
+      <div class="topbar__spacer"></div>
+      <div class="topbar__user">
+        <div class="avatar">运</div>
+        <span style="font-size:13px">平台运营</span>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <div class="page-head">
+        <div>
+          <div class="page-head__title">排序规则</div>
+          <div class="page-head__desc">优先级：置顶 &gt; 权重 &gt; 距离 &gt; 时间衰减　·　排名按地区独立维护</div>
+        </div>
+        <div class="page-head__spacer"></div>
+        <button class="btn btn--outline" onclick="resetOrder()">恢复默认</button>
+        <button class="btn btn--primary" onclick="saveOrder()">保存排序</button>
+      </div>
+
+      <div class="split">
+        <!-- 左：排名表 -->
+        <div class="flex-1" style="min-width:0">
+          <div class="card">
+            <div class="filter-bar">
+              <span class="text-13 text-3">地区</span>
+              <select class="select" style="width:140px" id="citySel" onchange="onCityChange()">
+                <option>成都市</option>
+                <option>重庆市</option>
+                <option>绵阳市</option>
+              </select>
+              <select class="select" style="width:120px" id="distSel" onchange="render()">
+                <option value="">全部区县</option>
+              </select>
+              <div class="flex-1"></div>
+              <span class="text-12 text-4">拖动 ⠿ 调整顺序</span>
+            </div>
+
+            <table class="table">
+              <thead>
+                <tr>
+                  <th style="width:52px">排名</th>
+                  <th>店铺</th>
+                  <th style="width:110px">权重</th>
+                  <th style="width:100px">置顶</th>
+                  <th style="width:110px">今日状态</th>
+                  <th style="width:90px">距离</th>
+                </tr>
+              </thead>
+              <tbody id="rankBody"></tbody>
+            </table>
+          </div>
+
+          <div class="alert alert--info mt-16">
+            <span>ⓘ</span>
+            <span>权重越大排越前；置顶店铺永远排在非置顶之前，多个置顶之间按权重排序。修改后需点「保存排序」生效。</span>
+          </div>
+        </div>
+
+        <!-- 右：客户端效果预览 -->
+        <div class="preview-panel">
+          <div class="flex-between mb-12">
+            <div class="text-13 fw-500">客户端效果预览</div>
+            <div class="text-12 text-3">实时</div>
+          </div>
+          <div id="previewList"></div>
+          <div class="text-12 text-4 mt-12" style="line-height:1.7">
+            展示顺序即客户端首页「附近」Tab 的实际排序结果
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- 发布规则配置 -->
+<div class="content" style="display:none"></div>
+
+<script src="../assets/data/mock.js"></script>
+<script src="../assets/js/api.js"></script>
+<script>
+let state = {
+  orders: [],       // 当前排序中的店铺 id
+  city: '成都市',
+  unpaidBackup: null
+};
+
+/* ---------- 初始化 ---------- */
+(function init() {
+  const dists = [...new Set(MOCK.shops.map(s => s.district))];
+  document.getElementById('distSel').innerHTML =
+    '<option value="">全部区县</option>' + dists.map(d => `<option>${d}</option>`).join('');
+
+  const sorted = MOCK.sortShops(MOCK.shops.filter(s => s.city === state.city));
+  state.orders = sorted.map(s => s.id);
+  render();
+})();
+
+function onCityChange() {
+  state.city = document.getElementById('citySel').value;
+  const sorted = MOCK.sortShops(MOCK.shops.filter(s => s.city === state.city));
+  state.orders = sorted.map(s => s.id);
+  render();
+}
+
+/* ---------- 渲染 ---------- */
+function render() {
+  const district = document.getElementById('distSel').value;
+  let list = state.orders
+    .map(id => MOCK.getShop(id))
+    .filter(Boolean)
+    .filter(s => !district || s.district === district);
+
+  if (!list.length) {
+    document.getElementById('rankBody').innerHTML =
+      '<tr><td colspan="6"><div class="empty"><div class="empty__icon">📭</div>' +
+      '<div class="empty__text">该地区暂无店铺</div></div></td></tr>';
+    document.getElementById('previewList').innerHTML =
+      '<div class="text-12 text-4">暂无数据</div>';
+    return;
+  }
+
+  document.getElementById('rankBody').innerHTML = list.map((s, i) => `
+    <tr class="rank-row ${s.pinned ? 'is-pinned' : ''}" draggable="true"
+        data-id="${s.id}" data-idx="${i}">
+      <td>
+        <div class="flex items-center gap-6">
+          <span class="drag-handle" title="拖动排序">⠿</span>
+          <span class="rank-no ${i < 3 ? 'rank-no--top' : ''}">${i + 1}</span>
+        </div>
+      </td>
+      <td>
+        <div class="shop-cell">
+          <div class="shop-cell__logo"><img src="${s.logo}"></div>
+          <div>
+            <div class="shop-cell__name">${s.name}</div>
+            <div class="shop-cell__meta">${s.district} · ${s.cuisine}</div>
+          </div>
+        </div>
+      </td>
+      <td>
+        <input class="num-input" type="number" min="0" max="99" value="${s.weight}"
+               onchange="setWeight('${s.id}', this.value)">
+      </td>
+      <td>
+        <button class="pin-btn ${s.pinned ? 'is-pinned' : ''}" onclick="togglePin('${s.id}')">
+          ${s.pinned ? '📌 已置顶' : '置顶'}
+        </button>
+      </td>
+      <td>
+        ${s.canPostToday
+          ? '<span class="tag tag--warning">今日未发</span>'
+          : '<span class="tag tag--success">今日已发</span>'}
+      </td>
+      <td class="text-13 text-2">${s.distance}km</td>
+    </tr>
+  `).join('');
+
+  bindDrag();
+  renderPreview(list);
+}
+
+function renderPreview(list) {
+  document.getElementById('previewList').innerHTML = list.slice(0, 6).map((s, i) => {
+    const dish = MOCK.getShopDishes(s.id)[0];
+    const img = dish ? (dish.cover || dish.media[0]) : s.logo;
+    return `
+      <div class="pv-row">
+        <span class="pv-row__no ${i < 3 ? 'pv-row__no--top' : ''}">${i + 1}</span>
+        <img class="pv-row__img" src="${img}">
+        <div style="flex:1;min-width:0">
+          <div class="text-13 fw-500 truncate">${s.name}</div>
+          <div class="text-12 text-3 truncate">${dish ? dish.name : '暂无菜品'}</div>
+        </div>
+        ${s.pinned ? '<span class="text-12" style="color:var(--brand)">📌</span>' : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+/* ---------- 拖拽排序 ---------- */
+let dragId = null;
+
+function bindDrag() {
+  document.querySelectorAll('.rank-row').forEach(row => {
+    row.addEventListener('dragstart', e => {
+      dragId = row.dataset.id;
+      row.classList.add('is-dragging');
+    });
+
+    row.addEventListener('dragend', () => {
+      row.classList.remove('is-dragging');
+      document.querySelectorAll('.rank-row').forEach(r => r.classList.remove('is-over'));
+    });
+
+    row.addEventListener('dragover', e => {
+      e.preventDefault();
+      if (row.dataset.id !== dragId) row.classList.add('is-over');
+    });
+
+    row.addEventListener('dragleave', () => row.classList.remove('is-over'));
+
+    row.addEventListener('drop', e => {
+      e.preventDefault();
+      row.classList.remove('is-over');
+      const targetId = row.dataset.id;
+      if (!dragId || dragId === targetId) return;
+
+      const from = state.orders.indexOf(dragId);
+      const to = state.orders.indexOf(targetId);
+      if (from < 0 || to < 0) return;
+
+      state.orders.splice(from, 1);
+      state.orders.splice(to, 0, dragId);
+      render();
+      toast('顺序已调整，记得点「保存排序」');
+    });
+  });
+}
+
+/* ---------- 操作 ---------- */
+function setWeight(id, val) {
+  const s = MOCK.getShop(id);
+  s.weight = Math.max(0, Math.min(99, Number(val) || 0));
+  applyWeightSort();
+}
+
+function applyWeightSort() {
+  // 仅在不与手动顺序冲突时重排：置顶优先，其余按权重
+  const list = state.orders.map(id => MOCK.getShop(id)).filter(Boolean);
+  const pinned = list.filter(s => s.pinned).sort((a, b) => b.weight - a.weight);
+  const normal = list.filter(s => !s.pinned).sort((a, b) => b.weight - a.weight);
+  state.orders = [...pinned, ...normal].map(s => s.id);
+  render();
+}
+
+function togglePin(id) {
+  const s = MOCK.getShop(id);
+  s.pinned = !s.pinned;
+  applyWeightSort();
+  toast(s.pinned ? `已置顶「${s.name}」` : `已取消置顶「${s.name}」`);
+}
+
+function resetOrder() {
+  if (!confirm('恢复为系统默认排序（置顶 > 权重 > 距离）？')) return;
+  const sorted = MOCK.sortShops(MOCK.shops.filter(s => s.city === state.city));
+  state.orders = sorted.map(s => s.id);
+  render();
+  toast('已恢复默认排序');
+}
+
+function saveOrder() {
+  toast('排序已保存，客户端即时生效');
+  track('admin_save_ranking', { city: state.city, order: state.orders });
+}
+
+/* ---------- Toast ---------- */
+let toastTimer;
+function toast(msg) {
+  let el = document.querySelector('.toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add('is-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-show'), 1800);
+}
+
+function track(event, data) { console.log('[track]', event, data); }
+</script>
+</body>
+</html>
