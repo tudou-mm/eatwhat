@@ -185,11 +185,36 @@ assert('筛选后仍守每店一条',
 assert('filterLabel 用后端档位名',
   s1.MOCK.filterLabel() === '中等', s1.MOCK.filterLabel());
 
-_t.setItem('clientFilter', JSON.stringify({ tiers: ['__not_exist__'], tastes: [] }));
+// 构造筛空必须用「真实存在但组合必然为空」的条件。
+// 不存在的档位 id 会被 sanitizeFilter 自动剔除，压根构不成筛选态。
+const emptyCombo = (function () {
+  for (const t of s1.MOCK.priceTiers.map((x) => x.id)) {
+    for (const taste of s1.MOCK.tasteTags) {
+      const f = { tiers: [t], tastes: [taste] };
+      const hit = s1.MOCK.dishes.filter(
+        (d) => d.status === 'normal' && s1.MOCK.matchFilter(d, f)
+      ).length;
+      if (hit === 0) return f;
+    }
+  }
+  return null;
+})();
+assert('数据里存在组合为空的筛选项（本组前提）', !!emptyCombo,
+  emptyCombo ? JSON.stringify(emptyCombo) : '无');
+
+_t.setItem('clientFilter', JSON.stringify(emptyCombo || { tiers: ['tier_mid'], tastes: ['清淡'] }));
 assert('筛空时返回空数组（关键：不回退旧内容）',
   s1.MOCK.buildFeed('nearby').length === 0,
   s1.MOCK.buildFeed('nearby').length + ' 条');
 assert('筛空时随机流同样为空', s1.MOCK.buildFeed('random').length === 0);
+
+// 平台端删掉一个价格档后，用户浏览器里还存着旧 id：
+// 不能把 tier_ghost 这种原始 id 显示给用户，也不能因此永久筛空
+_t.setItem('clientFilter', JSON.stringify({ tiers: ['tier_ghost'], tastes: ['麻辣'] }));
+assert('失效档位自动剔除、不显示原始 id',
+  s1.MOCK.filterLabel().indexOf('tier_ghost') === -1 &&
+  s1.MOCK.buildFeed('nearby').length > 0,
+  s1.MOCK.filterLabel());
 _t.removeItem('clientFilter');
 assert('清除条件后信息流恢复', s1.MOCK.buildFeed('nearby').length === feedAll.length);
 

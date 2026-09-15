@@ -40,11 +40,14 @@ function makeStorage(init) {
 
 /* ---------- 在沙箱里加载真实 mock.js ---------- */
 function load(storageInit) {
-  const sandbox = { localStorage: makeStorage(storageInit), console: console };
+  const storage = makeStorage(storageInit);
+  const sandbox = { localStorage: storage, console: console };
   vm.createContext(sandbox);
   // mock.js 结尾会执行 window.MOCK = MOCK，所以得先给它一个 window
   vm.runInContext('globalThis.window = globalThis;', sandbox);
   vm.runInContext(SRC, sandbox);
+  // 把 storage 挂回去，方便断言「是否真的回写了」
+  sandbox.MOCK.__storage = storage;
   return sandbox.MOCK;
 }
 
@@ -110,7 +113,24 @@ assert('filterLabel 拼接正确', M.filterLabel() === (M.priceTiers.find(t => t
 
 /* ---------- 5. 无结果时不能回退（关键） ---------- */
 section('\u3010\u5173\u952e\u3011\u7b5b\u7a7a\u65f6\u4e0d\u80fd\u56de\u9000\u65e7\u5185\u5bb9');
-M.setFilter({ tiers: ['__not_exist__'], tastes: [] });
+
+// 构造筛空必须用「真实存在但组合必然为空」的条件。
+// 不能用不存在的档位 id —— 那种失效条件会被 sanitizeFilter 自动剔除，
+// 压根构不成筛选态（该行为另有专门用例覆盖）。
+const emptyCombo = (function () {
+  for (const t of M.priceTiers.map(x => x.id)) {
+    for (const s of M.tasteTags) {
+      const f = { tiers: [t], tastes: [s] };
+      const hit = M.dishes.filter(d => d.status === 'normal' && M.matchFilter(d, f)).length;
+      if (hit === 0) return f;
+    }
+  }
+  return null;
+})();
+assert('数据里存在组合为空的筛选项（本组测试的前提）', !!emptyCombo,
+  emptyCombo ? JSON.stringify(emptyCombo) : '没有空组合');
+
+M.setFilter(emptyCombo || { tiers: ['tier_mid'], tastes: ['日料'] });
 const empty = M.buildFeed('nearby');
 assert('无匹配时返回空数组（没有偷偷补回旧内容）', empty.length === 0, empty.length + ' 条');
 assert('跑 random tab 同样为空', M.buildFeed('random').length === 0);
@@ -194,6 +214,49 @@ assert('getFilter 容忍损坏的 JSON', (function () {
   const M5 = load({ clientFilter: '{{{坏数据' });
   return M5.getFilter().tiers.length === 0 && M5.filterActive() === false;
 })());
+
+/* ---------- 失效条件的自动收敛 ---------- */
+/* 场景：平台端删掉 / 改了一个价格档，用户浏览器里还存着旧 id。
+   不校正的话首页会显示「筛选：tier_old」这种看不懂的原始 id，
+   而且永久筛空，用户都不知道该清哪个条件。 */
+section('失效条件自动收敛（平台改档位后的遗留状态）');
+
+(function () {
+  const M6 = load({ clientFilter: JSON.stringify({ tiers: ['tier_ghost'], tastes: ['麻辣'] }) });
+
+  const f = M6.getFilter();
+  assert('失效的档位 id 被剔除', f.tiers.length === 0, JSON.stringify(f.tiers));
+  assert('仍有效的口味被保留', f.tastes.indexOf('麻辣') > -1, JSON.stringify(f.tastes));
+  assert('校正结果已回写 localStorage',
+    (M6.getFilter().tiers || []).length === 0 &&
+    JSON.parse(M6.__storage.getItem('clientFilter')).tiers.length === 0);
+
+  // 这次不筛价格档，但口味还在 —— 应该还能筛出东西，而不是筛空
+  const list = M6.buildFeed('nearby');
+  assert('校正后仍能筛出口味匹配的内容', list.length > 0, list.length + ' 条');
+
+  // 标签文案里不能出现原始 id
+  const label = M6.filterLabel({ tiers: ['tier_ghost'], tastes: ['麻辣'] });
+  assert('标签不显示失效档位的原始 id', label.indexOf('tier_ghost') === -1, '→ ' + label);
+})();
+
+(function () {
+  const M7 = load({ clientFilter: JSON.stringify({ tiers: ['tier_mid', 'tier_ghost'], tastes: [] }) });
+  const f = M7.getFilter();
+  assert('有效档位保留、失效档位剔除',
+    f.tiers.length === 1 && f.tiers[0] === 'tier_mid', JSON.stringify(f.tiers));
+})();
+
+(function () {
+  // 数据源还没就绪（适配层未把后端档位灌进来）时，绝不能把用户条件清空
+  const M8 = load({ clientFilter: JSON.stringify({ tiers: ['tier_mid'], tastes: [] }) });
+  const savedTiers = M8.priceTiers;
+  M8.priceTiers = [];
+  const f = M8.getFilter();
+  assert('数据源为空时跳过校验，不清空用户条件',
+    f.tiers.length === 1 && f.tiers[0] === 'tier_mid', JSON.stringify(f.tiers));
+  M8.priceTiers = savedTiers;
+})();
 
 /* ---------- 汇总 ---------- */
 console.log('\n' + '='.repeat(52));

@@ -529,14 +529,46 @@ const MOCK = {
   filterKey: 'clientFilter',
 
   getFilter() {
+    let f = { tiers: [], tastes: [] };
     try {
       const raw = localStorage.getItem('clientFilter');
-      if (!raw) return { tiers: [], tastes: [] };
-      const o = JSON.parse(raw) || {};
-      return { tiers: o.tiers || [], tastes: o.tastes || [] };
+      if (raw) {
+        const o = JSON.parse(raw) || {};
+        f = { tiers: o.tiers || [], tastes: o.tastes || [] };
+      }
     } catch (e) {
-      return { tiers: [], tastes: [] };
+      return { tiers: [], tastes: [] };   // 脏 JSON 直接当作没筛选
     }
+    const v = this.sanitizeFilter(f);
+    // 只有真的剔掉了失效项才回写，避免每次读取都产生一次写操作
+    if (v.tiers.length !== f.tiers.length || v.tastes.length !== f.tastes.length) {
+      this.setFilter(v);
+    }
+    return v;
+  },
+
+  /*
+   * 校正筛选条件：剔除平台端已删除的档位与口味。纯函数，不写库。
+   *
+   * 为什么需要：平台改了价格档，用户浏览器里还存着旧 id。
+   * 不校正的话首页顶部会显示「筛选：tier_old」这种看不懂的原始 id，
+   * 而且永久筛空 —— 用户根本不知道该清哪个条件。
+   *
+   * 只减不增，不会把「没筛选」变成「有筛选」。
+   * 数据源为空（适配层还没把后端档位灌进来）时跳过校验，
+   * 否则会把用户的条件误清空。
+   */
+  sanitizeFilter(f) {
+    const tiers = (f && f.tiers) || [];
+    const tastes = (f && f.tastes) || [];
+    return {
+      tiers: (this.priceTiers && this.priceTiers.length)
+        ? tiers.filter(id => this.priceTiers.some(t => t.id === id))
+        : tiers.slice(),
+      tastes: (this.tasteTags && this.tasteTags.length)
+        ? tastes.filter(t => this.tasteTags.includes(t))
+        : tastes.slice()
+    };
   },
 
   setFilter(f) {
@@ -563,7 +595,9 @@ const MOCK = {
 
   /* 筛选条件的中文描述，给首页顶部那条提示用 */
   filterLabel(f) {
-    const x = f || this.getFilter();
+    // 先校正一次：万一传进来的是带失效 id 的脏条件，
+    // 也不能把 tier_xxx 这种原始 id 显示给用户
+    const x = this.sanitizeFilter(f || this.getFilter());
     const names = x.tiers.map(id => {
       const t = this.priceTiers.find(p => p.id === id);
       return t ? t.name : id;
