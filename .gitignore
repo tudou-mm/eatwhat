@@ -59,5 +59,12 @@ node_modules/
 dist/
 .cache/
 
+# ---------- Python（server/tools 下的脚本跑起来会生成） ----------
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
 # ---------- WorkBuddy 本地状态 ----------
 .workbuddy/

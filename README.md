@@ -104,6 +104,23 @@ python drive_client.py           # 客户端页面体检，13 项 + 截图到 .s
 > 端到端脚本的数量断言一律**跟后端实时对比**，不写死数字 —— 改种子数据不用改测试。
 > ⚠️ 带时间流逝的断言（冷却倒计时）要留容差，拿开场快照比会越比越偏。
 
+### 推送到 GitHub
+
+沙箱/代理环境会**阻断 `github.com:443` 直连**（`git push` 报
+`Connection was reset` / `Failed to connect to github.com:443`），
+但 `api.github.com` 通。这时用 `push_via_api.py` 走 Git Data API 推：
+
+```bash
+export GITHUB_TOKEN=$(gh auth token)       # 或有 repo 权限的 PAT，只走环境变量、不落盘
+python server/tools/push_via_api.py         # 逐提交重建，作者/时间/message 原样保留
+python server/tools/push_via_api.py --dry-run
+```
+
+它**不是**把多个提交压成一个 —— 远端历史与本地逐提交一致，sha 也完全相同。
+内置硬校验：tree sha 和本地对不上就立刻中止、不动远端 ref。
+
+> 能正常联网的机器上，直接 `git push origin main` 就行，不需要这个脚本。
+
 ---
 
 ## 演示数据
