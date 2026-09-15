@@ -19,6 +19,7 @@
 
 ```
 ├── index.html              原型总览（从这里开始看）
+├── dev.py                  一键启动后端 + 前端
 ├── assets/
 │   ├── css/base.css        设计系统（全站唯一）
 │   ├── js/api.js           后端适配层（一键切换真假数据）
@@ -28,6 +29,7 @@
 ├── admin/                  平台端 8 页   审核、排名、规则、处罚
 ├── docs/                   设计文档 + 接口契约
 └── server/                 Spring Boot 后端
+    └── tools/              冒烟测试 / 适配层测试 / 环境安装脚本
 ```
 
 ---
@@ -38,23 +40,47 @@
 
 直接用浏览器打开 `index.html`。所有页面跑本地假数据，无需任何环境。
 
-### 连后端跑
+### 连后端跑（推荐）
+
+```bash
+python dev.py                # 一键起后端 :8080 + 前端 :5173
+```
+
+也可以只要一个：`python dev.py --api-only` / `--web-only`。
+
+手动起后端：
 
 ```bash
 cd server
 mvn spring-boot:run          # 需要 JDK 17 + Maven
 ```
 
-后端默认用 **H2 内存库**，免安装数据库。启动后打开前端任意页面，控制台执行：
+后端默认用 **H2 内存库**，免安装数据库，启动即有演示数据。
 
-```js
-localStorage.setItem('useApi', '1');
-location.reload();            // 切到后端
-// 切回假数据：localStorage.removeItem('useApi'); location.reload();
+### 怎么切到后端数据
+
+访问页面时地址栏加 `?api=1`：
+
+```
+http://127.0.0.1:5173/client/feed.html?api=1
 ```
 
-适配层 `assets/js/api.js` 保持了与 `mock.js` 完全相同的同步函数签名，
-所以**三端 22 个页面接入后端时一行代码都不用改**。后端没启动还会自动降级。
+切回假数据用 `?api=0`。也可以走控制台：
+
+```js
+localStorage.setItem('useApi', '1'); location.reload();
+```
+
+适配层 `assets/js/api.js` 保持了与 `mock.js` 完全相同的**同步**函数签名，
+所以**三端 22 个页面接入后端时一行代码都不用改**。后端没启动会自动降级回假数据。
+
+### 跑测试
+
+```bash
+cd server/tools
+python smoke_test.py 8080        # 21 项后端接口冒烟
+node test_adapter.cjs            # 18 项适配层行为测试（含后端挂掉的降级路径）
+```
 
 ---
 
@@ -107,9 +133,14 @@ location.reload();            // 切到后端
 
 ---
 
-## 已知待办
+## 状态
+
+**后端已在 JDK 17 + Maven 3.9 下编译通过并实际运行验证**：
+21 项接口冒烟测试 + 18 项适配层行为测试全绿。
+
+### 已知待办
 
 - [ ] 后端鉴权（当前登录返回 mock token，需补 JWT）
 - [ ] 文件上传（`media` 目前由前端直接传 URL，需接 OSS）
 - [ ] CORS 收紧（当前开发期全放开）
-- [ ] 后端源码未在无 JDK 环境下编译验证
+- [ ] 平台端「商家审核」页尚未接后端接口（目前前端内存态自管）

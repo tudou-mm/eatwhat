@@ -32,6 +32,44 @@ public class ClientController {
         this.configService = configService;
     }
 
+    /**
+     * 启动聚合接口：一次返回客户端各页面所需的基础数据。
+     * ------------------------------------------------------------------
+     * 为什么需要它：
+     * 适配层做的是「同步预加载」，请求数直接换算成页面白屏时长。
+     * 分散拉取要走 1(店铺)+1(配置)+N(各店菜品)+M(各菜评论) 次请求，
+     * 店铺一多就会明显卡首屏。聚合成 1 次请求，首屏稳定。
+     * 顺带修正语义 —— 适配层原先调的是平台端的 /admin/shops。
+     *
+     * 注意：这里必须用 shopView / dishView 转换，
+     * 不能用原始实体 —— 前端读的是 stats.xxx 嵌套结构，
+     * 实体是扁平的 statXxx 字段，直接返回页面会取不到值。
+     */
+    @GetMapping("/bootstrap")
+    public R<Map<String, Object>> bootstrap() {
+        Map<String, Object> m = new LinkedHashMap<>();
+
+        List<Map<String, Object>> shops = new ArrayList<>();
+        for (Shop s : shopService.listVisible()) shops.add(shopView(s));
+        m.put("shops", shops);
+
+        List<Map<String, Object>> dishes = new ArrayList<>();
+        for (Dish d : dishService.listByStatus("normal")) dishes.add(dishView(d));
+        m.put("dishes", dishes);
+
+        List<Map<String, Object>> comments = new ArrayList<>();
+        for (com.eatwhat.entity.Comment c : commentService.listAll()) comments.add(commentView(c));
+        m.put("comments", comments);
+
+        Map<String, Object> cfg = new LinkedHashMap<>();
+        cfg.put("priceTiers", configService.priceTiers());
+        cfg.put("tasteTags", configService.tasteTags());
+        cfg.put("cuisines", configService.cuisines());
+        m.put("config", cfg);
+
+        return R.ok(m);
+    }
+
     /** 信息流。tab = nearby | random */
     @GetMapping("/feed")
     public R<List<Map<String, Object>>> feed(@RequestParam(defaultValue = "nearby") String tab,
@@ -212,13 +250,24 @@ public class ClientController {
         m.put("dailyLimit", s.getDailyLimit());
         m.put("canPostToday", s.getCanPostToday());
         Map<String, Object> stats = new LinkedHashMap<>();
+        stats.put("dishes", dishService.listByShop(s.getId()).size());
         stats.put("views", s.getStatViews());
         stats.put("likes", s.getStatLikes());
         stats.put("favorites", s.getStatFavorites());
         stats.put("comments", s.getStatComments());
         stats.put("checkins", s.getStatCheckins());
         m.put("stats", stats);
+        // 前端读的是格式化好的时间字符串（mock 里就是 'yyyy-MM-dd HH:mm'）
+        m.put("lastPostAt", fmtTs(s.getLastPublishAt()));
         return m;
+    }
+
+    /** 时间戳 → 'yyyy-MM-dd HH:mm'，与前端 mock 的格式保持一致 */
+    private String fmtTs(Long ts) {
+        if (ts == null) return "";
+        return java.time.LocalDateTime
+                .ofInstant(java.time.Instant.ofEpochMilli(ts), java.time.ZoneId.of("Asia/Shanghai"))
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
     }
 
     private Map<String, Object> commentView(com.eatwhat.entity.Comment c) {
