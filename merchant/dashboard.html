@@ -165,6 +165,14 @@ let shop = null;
 
 (function init() {
   shop = MOCK.getShop(MOCK.currentMerchant.shopId);
+  // 接后端后可能取不到店（身份 id 对不上）——给提示，别让 shop.id 崩页面
+  if (!shop) {
+    document.getElementById('statusCard').innerHTML =
+      '<div class="sc__label">今日状态</div>' +
+      '<div class="sc__title">未识别到你的店铺</div>' +
+      '<div class="sc__sub">请重新登录商家端</div>';
+    return;
+  }
   renderStatus();
   renderDishes();
 })();
@@ -214,11 +222,12 @@ function renderStatus() {
     ` : ''}
   `;
 
-  // 从"上次发布 + 间隔"算剩余
+  // 剩余时间由后端算好带回（适配层挂在 MOCK.cooldownSeconds 上）。
+  // 取不到才退回演示值 —— 原来写死「间隔减 900 秒」，跟真实冷却对不上。
   const intervalH = shop.intervalHours || 24;
-  const total = intervalH * 3600;
-  // 原型：假定距上次发布已过 15 分钟
-  cdSecond = total - 900;
+  cdSecond = (typeof MOCK.cooldownSeconds === 'number' && MOCK.cooldownSeconds > 0)
+    ? MOCK.cooldownSeconds
+    : intervalH * 3600 - 900;
   tick();
   setInterval(tick, 1000);
 }

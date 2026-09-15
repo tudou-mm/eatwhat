@@ -105,32 +105,57 @@
 <script src="../assets/data/mock.js"></script>
 <script src="../assets/js/api.js"></script>
 <script>
-let applying = null;
-let status = 'pending';
+let applying = null;          // 刚提交的店铺数据（后端没接上时的兜底）
+let shop = null;              // 服务端返回的当前店铺
+let demoStatus = 'pending';   // 仅离线演示用
 
 (function init() {
   const raw = sessionStorage.getItem('applying');
   if (raw) applying = JSON.parse(raw);
+
+  // 优先读服务端：接上后端后，审核状态就是真实状态
+  shop = MOCK.getShop(MOCK.currentMerchant.shopId) || null;
+
+  if (MOCK.isOnline && MOCK.isOnline() && shop) {
+    // 真实数据下不再需要演示开关，否则用户会以为能自己改审核结果
+    const sw = document.querySelector('.demo-switch');
+    if (sw) sw.style.display = 'none';
+  }
   render();
 })();
 
+/** 展示用的状态：在线以服务端为准，离线才用演示按钮的值 */
+function currentStatus() {
+  if (MOCK.isOnline && MOCK.isOnline() && shop) {
+    return shop.status === 'normal' ? 'approved' : shop.status;
+  }
+  return demoStatus;
+}
+
+/** 展示用的店铺信息：服务端优先，其次刚提交的兜底数据 */
+function shopInfo() {
+  return shop || applying || null;
+}
+
 function setStatus(s) {
-  status = s;
+  demoStatus = s;
   render();
 }
 
 function render() {
-  const name = applying ? applying.name : (MOCK.getShop(MOCK.currentMerchant.shopId)?.name || '蜀香小馆');
+  const status = currentStatus();
+  const info = shopInfo();
+  const name = info ? info.name : '蜀香小馆';
   const card = document.getElementById('statusCard');
 
-  const infoHtml = applying ? `
+  const infoHtml = info ? `
     <div class="info-list">
-      <div class="info-row"><span class="info-row__k">店铺名称</span><span class="info-row__v">${applying.name}</span></div>
-      <div class="info-row"><span class="info-row__k">菜系</span><span class="info-row__v">${applying.cuisine}</span></div>
-      <div class="info-row"><span class="info-row__k">地址</span><span class="info-row__v">${applying.address}</span></div>
-      <div class="info-row"><span class="info-row__k">电话</span><span class="info-row__v">${applying.phone}</span></div>
-      <div class="info-row"><span class="info-row__k">营业时间</span><span class="info-row__v">${applying.hours}</span></div>
-      <div class="info-row"><span class="info-row__k">提交时间</span><span class="info-row__v">${applying.submittedAt}</span></div>
+      <div class="info-row"><span class="info-row__k">店铺名称</span><span class="info-row__v">${info.name}</span></div>
+      <div class="info-row"><span class="info-row__k">菜系</span><span class="info-row__v">${info.cuisine || '—'}</span></div>
+      <div class="info-row"><span class="info-row__k">地址</span><span class="info-row__v">${info.address || '—'}</span></div>
+      <div class="info-row"><span class="info-row__k">电话</span><span class="info-row__v">${info.phone || '—'}</span></div>
+      <div class="info-row"><span class="info-row__k">营业时间</span><span class="info-row__v">${info.hours || '—'}</span></div>
+      <div class="info-row"><span class="info-row__k">提交时间</span><span class="info-row__v">${info.submittedAt || '—'}</span></div>
     </div>
   ` : '';
 
@@ -187,7 +212,8 @@ function render() {
       <div class="reject-box">
         <div class="reject-box__label">驳回原因</div>
         <div class="reject-box__text">
-          门头图不清晰，无法辨认店铺招牌。请重新上传一张能看清店名的门头照，并确保地址与实际经营地址一致。
+          ${(info && info.rejectReason) ? info.rejectReason
+            : '门头图不清晰，无法辨认店铺招牌。请重新上传一张能看清店名的门头照，并确保地址与实际经营地址一致。'}
         </div>
       </div>
       ${infoHtml}
@@ -200,6 +226,14 @@ function render() {
 }
 
 function refresh() {
+  // 在线时真的去重新拉一次 —— 平台刚审核完，刷新就能看到新状态
+  if (MOCK.isOnline && MOCK.isOnline()) {
+    MOCK.preloadSync();
+    shop = MOCK.getShop(MOCK.currentMerchant.shopId) || shop;
+    render();
+    toast('已刷新');
+    return;
+  }
   toast('审核仍在进行中，请耐心等待');
 }
 

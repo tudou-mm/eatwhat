@@ -117,21 +117,21 @@ let replying = null;
 
 (function init() {
   shop = MOCK.getShop(MOCK.currentMerchant.shopId);
+  // 接后端后可能取不到店（身份 id 对不上）——给提示，别让 shop.id 崩页面
+  if (!shop) {
+    document.getElementById('list').innerHTML =
+      '<div class="empty"><div class="empty__icon">⚠️</div>' +
+      '<div class="empty__text">未识别到你的店铺，请重新登录商家端</div></div>';
+    return;
+  }
   render();
 })();
 
 function getList() {
-  // 本店所有菜品的评论
+  if (!shop) return [];
+  // 本店所有菜品的评论（后端 bootstrap 给的就是本店口径）
   const dishIds = MOCK.getShopDishes(shop.id).map(d => d.id);
   let list = MOCK.comments.filter(c => dishIds.includes(c.dishId));
-
-  // 原型补充：mock 中本店只有一条评论，补几条演示
-  if (list.length < 3) {
-    const extras = MOCK.comments.filter(c => c.dishId === 'd_002').map(c => ({
-      ...c, id: c.id + '_x', dishId: dishIds[0] || 'd_001'
-    }));
-    list = list.concat(extras.slice(0, 2));
-  }
 
   if (filter === 'unreplied') list = list.filter(c => !c.reply);
   if (filter === 'replied') list = list.filter(c => c.reply);
@@ -227,10 +227,10 @@ function sendReply(id) {
   const v = ta.value.trim();
   if (!v) { toast('回复内容不能为空'); return; }
 
-  const c = MOCK.comments.find(x => x.id === id);
-  if (!c) { toast('评论不存在'); return; }
+  // 落库：在线走后端，离线改本地内存
+  const r = MOCK.act('merchant.comment.reply', { id: id, content: v });
+  if (!r.ok) { toast('回复失败：' + (r.msg || '未知错误')); return; }
 
-  c.reply = { content: v, at: fmtNow() };
   replying = null;
   render();
   toast('回复已发布');

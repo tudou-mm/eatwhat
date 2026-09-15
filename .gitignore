@@ -43,9 +43,10 @@ logs/
 *.bak
 *~
 
-# ---------- 测试截图（drive_client.py / drive_admin_e2e.py 产出，本地看效果用） ----------
+# ---------- 测试截图（drive_*.py 产出，本地看效果用） ----------
 .shots/
 .shots-admin/
+.shots-merchant/
 
 # ---------- 数据库本地文件 ----------
 *.db

@@ -215,9 +215,12 @@
 <script>
 let shop = null;
 let photos = [];
+let coverOverride = null;   // 换过但还没保存的门头图
 
 (function init() {
   shop = MOCK.getShop(MOCK.currentMerchant.shopId);
+  // 接后端后可能取不到店（身份 id 对不上）——给提示，别让 shop.cuisine 崩页面
+  if (!shop) { toast('未识别到你的店铺，请重新登录商家端'); return; }
 
   document.getElementById('fCuisine').innerHTML =
     MOCK.cuisines.map(c => `<option ${c === shop.cuisine ? 'selected' : ''}>${c}</option>`).join('');
@@ -270,8 +273,10 @@ function delPhoto(i) {
 }
 
 function changeCover() {
-  shop.cover = 'https://picsum.photos/seed/newcover' + Date.now() + '/800/600';
-  document.getElementById('coverImg').src = shop.cover;
+  // 只改「待保存」的本地值，不直接写 shop.cover ——
+  // 直接写会把还没保存的改动混进缓存，用户点取消也回不去了
+  coverOverride = 'https://picsum.photos/seed/newcover' + Date.now() + '/800/600';
+  document.getElementById('coverImg').src = coverOverride;
   toast('门头图已更换，保存后需重新审核');
 }
 
@@ -280,20 +285,33 @@ function pickMap() {
 }
 
 function save() {
+  if (!shop) return;
   const name = document.getElementById('fName').value.trim();
   if (!name) { toast('店铺名称不能为空'); return; }
 
   const oldAddr = shop.address;
   const oldCover = shop.cover;
 
-  shop.name = name;
-  shop.cuisine = document.getElementById('fCuisine').value;
-  shop.intro = document.getElementById('fIntro').value.trim();
-  shop.address = document.getElementById('fAddr').value;
-  shop.phone = document.getElementById('fPhone').value.trim();
-  shop.hours = document.getElementById('fOpen').value + ' - ' + document.getElementById('fClose').value;
+  const payload = {
+    name: name,
+    cuisine: document.getElementById('fCuisine').value,
+    intro: document.getElementById('fIntro').value.trim(),
+    address: document.getElementById('fAddr').value,
+    phone: document.getElementById('fPhone').value.trim(),
+    hours: document.getElementById('fOpen').value + ' - ' + document.getElementById('fClose').value
+  };
+  if (coverOverride) { payload.cover = coverOverride; payload.logo = coverOverride; }
 
-  const needReview = oldAddr !== shop.address || oldCover !== shop.cover;
+  // 落库：在线走后端，离线改本地内存
+  const r = MOCK.act('merchant.shop.update', payload);
+  if (!r.ok) { toast('保存失败：' + (r.msg || '未知错误')); return; }
+
+  const saved = r.data || shop;
+  shop = saved;
+  coverOverride = null;
+  document.getElementById('coverImg').src = saved.cover;
+
+  const needReview = oldAddr !== saved.address || oldCover !== saved.cover;
   toast(needReview ? '已保存，敏感信息将重新审核' : '已保存');
 
   track('merchant_save_shop', { needReview });

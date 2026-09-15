@@ -421,8 +421,18 @@ const S = {
 
 /* ---------- 初始化 ---------- */
 (function init() {
-  // 冷却状态判断：mock 中该店今天已发布
   const shop = MOCK.getShop(MOCK.currentMerchant.shopId);
+
+  // 接后端后可能取不到店（身份 id 对不上）——给个明确提示，别留白屏
+  if (!shop) {
+    document.getElementById('cooldownView').classList.remove('hidden');
+    document.getElementById('formView').classList.add('hidden');
+    const el = document.getElementById('cdTime');
+    if (el) el.textContent = '—';
+    return;
+  }
+
+  // 冷却判断来自后端：canPostToday + cooldownSeconds 都是服务端算的
   if (!shop.canPostToday) {
     document.getElementById('cooldownView').classList.remove('hidden');
     document.getElementById('formView').classList.add('hidden');
@@ -436,7 +446,11 @@ const S = {
 })();
 
 /* ---------- 冷却倒计时 ---------- */
-let cdSecond = 23 * 3600 + 45 * 60 + 12;
+/* 剩余秒数由后端算好带回（适配层挂到 MOCK.cooldownSeconds）。
+   取不到时才退回演示值 —— 原来写死 23:45:12，和真实冷却对不上。 */
+let cdSecond = (typeof MOCK.cooldownSeconds === 'number' && MOCK.cooldownSeconds > 0)
+  ? MOCK.cooldownSeconds
+  : 23 * 3600 + 45 * 60 + 12;
 function startCountdown() {
   const el = document.getElementById('cdTime');
   setInterval(() => {
@@ -646,8 +660,33 @@ function closeModal() {
 function doSubmit() {
   document.getElementById('confirmModal').classList.remove('is-open');
 
+  const priceRaw = document.getElementById('dishPrice').value.trim();
+  const media = S.type === 'image'
+    ? S.images.slice()
+    : [S.videoCover || ('https://picsum.photos/seed/vp' + Date.now() + '/800/1200')];
+
+  // 真正提交：在线走后端落库，离线改本地内存。
+  // 冷却、日上限、媒体数量校验都在服务端，失败会把原因带回来。
+  const r = MOCK.act('merchant.publish', {
+    name: document.getElementById('dishName').value.trim(),
+    desc: document.getElementById('dishDesc').value.trim(),
+    type: S.type,
+    media: media,
+    cover: media[0],
+    price: priceRaw === '' ? null : Number(priceRaw),
+    tasteTags: S.tastes.slice()
+  });
+
+  if (!r.ok) {
+    alert('发布失败：' + (r.msg || '未知错误'));
+    return;
+  }
+
+  const shop = MOCK.getShop(MOCK.currentMerchant.shopId);
+  const intervalH = (shop && shop.intervalHours) || 24;
+
   const now = new Date();
-  const next = new Date(now.getTime() + 24 * 3600 * 1000);
+  const next = new Date(now.getTime() + intervalH * 3600 * 1000);
   const fmt = d => d.getFullYear() + '-' +
     String(d.getMonth() + 1).padStart(2, '0') + '-' +
     String(d.getDate()).padStart(2, '0') + ' ' +

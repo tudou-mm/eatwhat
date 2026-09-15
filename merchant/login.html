@@ -183,6 +183,15 @@ function doLogin() {
   if (!acct.startsWith('138')) {
     toast('原型中只有 13800138000 已通过审核');
   }
+
+  // 记下「我是哪家店」—— 商家端各页据此取自己的数据。
+  // 原型阶段不做真鉴权（见 docs/05），这里只是把身份落个地方。
+  const shopId = (MOCK.currentMerchant && MOCK.currentMerchant.shopId) || 's_001';
+  try {
+    localStorage.setItem('merchantShopId', shopId);
+    localStorage.setItem('merchantAccount', acct);
+  } catch (e) { /* 隐私模式下 localStorage 可能不可用，不影响演示 */ }
+
   toast('登录成功');
   setTimeout(() => location.href = 'dashboard.html', 700);
 }

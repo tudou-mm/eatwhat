@@ -54,6 +54,18 @@
     return 'client';
   })();
 
+  /**
+   * 商家身份：当前登录的是哪家店。
+   * 登录后写入 localStorage（原型阶段不做真鉴权，见 docs/05 的说明）；
+   * 没有就回退到 mock 里的演示账号。
+   */
+  function merchantShopId() {
+    var id = null;
+    try { id = localStorage.getItem('merchantShopId'); } catch (e) { id = null; }
+    if (id) return id;
+    return (window.MOCK && window.MOCK.currentMerchant && window.MOCK.currentMerchant.shopId) || null;
+  }
+
   // 缓存区
   var cache = {
     shops: [],
@@ -69,6 +81,9 @@
     priceTiers: [],
     tasteTags: [],
     cuisines: [],
+    me: null,              // 商家端：当前登录的店铺
+    canPostToday: null,    // 商家端：今天还能不能发
+    cooldownSeconds: 0,    // 商家端：距下次可发的剩余秒数
     loaded: false
   };
 
@@ -155,6 +170,47 @@
   }
 
   /**
+   * 商家端数据。
+   * 与客户端的根本差别：这里是「我这一个店」的口径 ——
+   * 包含 pending / rejected 状态的**自己**，以及**已下架**的菜品。
+   * 这两样在客户端可见范围里都不存在，所以商家端拿 /client/bootstrap
+   * 会直接 getShop 返回 null，整页空白。
+   */
+  function applyMerchantData(d) {
+    d = d || {};
+    var shop = d.shop || null;
+    cache.me = shop;
+
+    // 商家端不做跨店过滤：shops / dishes 就是「我的店 / 我的菜」
+    cache.shops = shop ? [shop] : [];
+    cache.dishes = d.dishes || [];
+    cache.comments = d.comments || [];
+    cache.canPostToday = d.canPostToday;
+    cache.cooldownSeconds = d.cooldownSeconds || 0;
+    applyConfig(d.config);
+
+    if (!window.MOCK) return;
+    var M = window.MOCK;
+    if (shop) {
+      M.shops = cache.shops;
+      // 商家身份以服务端返回的店为准，避免 localStorage 里的旧 id 把页面带偏
+      if (M.currentMerchant) {
+        M.currentMerchant.shopId = shop.id;
+        M.currentMerchant.status = shop.status;
+        M.currentMerchant.rejectReason = shop.rejectReason || '';
+      }
+    }
+    // 商家端不拆「下架」桶：下架的菜商家必须看得见、能恢复，
+    // 所以 getShopDishes 返回的是全集。
+    M.dishes = cache.dishes;
+    M.removedDishes = [];
+    M.comments = cache.comments;
+    // 冷却秒数暴露给页面，发布页的倒计时用它 ——
+    // 原来页面写死了 23:45:12，跟真实剩余时间对不上
+    M.cooldownSeconds = cache.cooldownSeconds;
+  }
+
+  /**
    * 同步预加载：把后端数据灌进缓存。
    * 返回 true 表示成功接上后端；false 表示已降级回本地假数据。
    */
@@ -164,6 +220,15 @@
       // 每端只打一个聚合接口，请求数直接等于白屏时长，能少则少
       if (END === 'admin') {
         applyAdminData(syncGet('/admin/bootstrap') || {});
+      } else if (END === 'merchant') {
+        var sid = merchantShopId();
+        if (sid) {
+          applyMerchantData(syncGet('/merchant/bootstrap?shopId=' +
+            encodeURIComponent(sid)) || {});
+        } else {
+          // 没登录也没演示身份 —— 交给本地假数据兜底，页面至少能打开
+          throw new Error('未识别到商家身份（localStorage.merchantShopId 为空）');
+        }
       } else {
         applyClientData(syncGet('/client/bootstrap') || {});
       }
@@ -214,10 +279,21 @@
   /** 异步预加载：页面若愿意 await，可以拿到最新的后端数据 */
   function preload() {
     if (!enabled) return Promise.resolve(false);
-    var path = END === 'admin' ? '/admin/bootstrap' : '/client/bootstrap';
+    var path;
+    if (END === 'admin') {
+      path = '/admin/bootstrap';
+    } else if (END === 'merchant') {
+      var sid = merchantShopId();
+      if (!sid) return Promise.resolve(false);
+      path = '/merchant/bootstrap?shopId=' + encodeURIComponent(sid);
+    } else {
+      path = '/client/bootstrap';
+    }
     return get(path)
       .then(function (d) {
-        if (END === 'admin') applyAdminData(d); else applyClientData(d);
+        if (END === 'admin') applyAdminData(d);
+        else if (END === 'merchant') applyMerchantData(d);
+        else applyClientData(d);
         cache.loaded = true;
         return true;
       })
@@ -348,6 +424,27 @@
 
   function findReport(id) {
     return (cache.reports || []).find(function (r) { return r.id === id; }) || null;
+  }
+
+  function findComment(id) {
+    var M = window.MOCK;
+    var lists = [cache.comments, M && M.comments];
+    for (var i = 0; i < lists.length; i++) {
+      var hit = (lists[i] || []).find(function (c) { return c.id === id; });
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  /**
+   * 商家端的菜品写入：只动「我的菜」这一个池子。
+   * 不调 reconcileDishLists —— 那个函数按 status 把菜拆进
+   * removed 桶，而商家端刻意不拆（下架的菜他要看得见、能恢复）。
+   */
+  function upsertShopDish(d) {
+    if (!d || !d.id) return;
+    upsert(cache.dishes, d);
+    if (window.MOCK) upsert(window.MOCK.dishes, d);
   }
 
   /** 把一份菜品数组按 status 拆到「在架」和「已下架」两个桶里 */
@@ -622,6 +719,216 @@
         };
         cache.publishRule = window.MOCK.publishRule;
       }
+    },
+
+    // ==================== 商家端 ====================
+    /*
+     * 与平台端的关键差别：平台端操作「任意一家店」，商家端只能操作
+     * 「自己那家店」。所以 shopId 一律由 merchantShopId() 决定，
+     * 不接受页面随便传 —— 页面把参数写错就能改串数据，这种口子不能留。
+     */
+
+    /** 发布菜品。冷却 / 日上限 / 媒体数量都由服务端把关 */
+    'merchant.publish': {
+      path: function () { return '/merchant/dish'; },
+      body: function (p) {
+        return {
+          shopId: merchantShopId(),
+          name: p.name, desc: p.desc, type: p.type,
+          media: p.media, cover: p.cover, price: p.price,
+          tasteTags: p.tasteTags
+        };
+      },
+      local: function (p) {
+        var M = window.MOCK;
+        if (!M) return false;
+        var media = p.media || [];
+        if (!media.length) return false;
+        var tier = API.getTierByPrice(p.price);
+        upsertShopDish({
+          id: 'd_' + Date.now(),
+          shopId: merchantShopId(),
+          shopName: (cache.me && cache.me.name) || '',
+          name: p.name,
+          desc: p.desc,
+          type: p.type,
+          media: media,
+          cover: p.cover || media[0],
+          price: p.price,
+          priceTierId: tier ? tier.id : null,
+          realTag: 'pending',
+          tasteTags: p.tasteTags || [],
+          publishedAt: nowStr(),
+          status: 'normal',
+          stats: { views: 0, likes: 0, favorites: 0, comments: 0, checkins: 0 },
+          decay: 1
+        });
+        return true;
+      },
+      apply: function (data) {
+        upsertShopDish(data);
+        // 发布成功后本地也要立刻反映「今天不能发了」，否则页面还在放行
+        cache.canPostToday = false;
+        if (cache.me) {
+          cache.me.canPostToday = false;
+          cache.me.lastPostAt = data.publishedAt;
+        }
+      }
+    },
+
+    /** 编辑菜品。type 不可改，服务端会拒 */
+    'merchant.dish.update': {
+      method: 'PUT',
+      path: function (p) { return '/merchant/dish/' + p.id; },
+      body: function (p) {
+        return { name: p.name, desc: p.desc, price: p.price,
+                 media: p.media, tasteTags: p.tasteTags };
+      },
+      local: function (p) {
+        var d = findDish(p.id);
+        if (!d) return false;
+        if (p.name != null) d.name = p.name;
+        if (p.desc != null) d.desc = p.desc;
+        if (p.media != null) d.media = p.media;
+        if (p.tasteTags != null) d.tasteTags = p.tasteTags;
+        if (p.price != null) {
+          d.price = p.price;
+          var t = API.getTierByPrice(p.price);   // 价格变了要重新归档档位
+          d.priceTierId = t ? t.id : null;
+        }
+        return true;
+      },
+      apply: function (data) { upsertShopDish(data); }
+    },
+
+    /**
+     * 下架 / 恢复自己的菜品。
+     * ⚠️ 一律走逻辑下架（status=removed），**不能从数组里 splice 掉** ——
+     * 「超 24h 权重归零但不物理删除」是同一条口径，物理删除会让
+     * 平台端的内容管理和下架记录对不上账。
+     */
+    'merchant.dish.remove': {
+      path: function (p) { return '/merchant/dish/' + p.id + '/remove'; },
+      body: function () { return { shopId: merchantShopId() }; },
+      local: function (p) {
+        var d = findDish(p.id);
+        if (!d) return false;
+        d.status = 'removed';
+        return true;
+      },
+      apply: function (data) { upsertShopDish(data); }
+    },
+
+    'merchant.dish.restore': {
+      path: function (p) { return '/merchant/dish/' + p.id + '/restore'; },
+      body: function () { return { shopId: merchantShopId() }; },
+      local: function (p) {
+        var d = findDish(p.id);
+        if (!d) return false;
+        d.status = 'normal';
+        return true;
+      },
+      apply: function (data) { upsertShopDish(data); }
+    },
+
+    /** 保存店铺资料 */
+    'merchant.shop.update': {
+      method: 'PUT',
+      path: function () { return '/merchant/shop/' + merchantShopId(); },
+      body: function (p) {
+        return { name: p.name, cuisine: p.cuisine, intro: p.intro,
+                 address: p.address, phone: p.phone, hours: p.hours,
+                 cover: p.cover, logo: p.logo };
+      },
+      local: function (p) {
+        var s = cache.me || findShop(merchantShopId());
+        if (!s) return false;
+        ['name', 'cuisine', 'intro', 'address', 'phone', 'hours', 'cover', 'logo']
+          .forEach(function (k) { if (p[k] != null) s[k] = p[k]; });
+        return true;
+      },
+      apply: function (data) {
+        cache.me = data;
+        cache.shops = [data];
+        if (window.MOCK) window.MOCK.shops = cache.shops;
+      }
+    },
+
+    /** 商家回评 */
+    'merchant.comment.reply': {
+      path: function (p) { return '/merchant/comment/' + p.id + '/reply'; },
+      body: function (p) { return { content: p.content }; },
+      local: function (p) {
+        var c = findComment(p.id);
+        if (!c) return false;
+        c.reply = { content: p.content, at: nowStr() };
+        return true;
+      },
+      apply: function (data) {
+        if (window.MOCK) upsert(window.MOCK.comments, data);
+        upsert(cache.comments, data);
+      }
+    },
+
+    /** 清除回评 */
+    'merchant.comment.clearReply': {
+      method: 'DELETE',
+      path: function (p) { return '/merchant/comment/' + p.id + '/reply'; },
+      body: function () { return null; },
+      local: function (p) {
+        var c = findComment(p.id);
+        if (!c) return false;
+        c.reply = null;
+        return true;
+      },
+      apply: function (data) {
+        if (window.MOCK) upsert(window.MOCK.comments, data);
+        upsert(cache.comments, data);
+      }
+    },
+
+    /** 入驻申请：落成一家待审核店铺，并把商家身份切到新店 */
+    'merchant.apply': {
+      path: function () { return '/merchant/apply'; },
+      body: function (p) {
+        return { name: p.name, cuisine: p.cuisine, phone: p.phone,
+                 address: p.address, city: p.city, district: p.district,
+                 hours: p.hours, intro: p.intro,
+                 cover: p.cover, logo: p.logo };
+      },
+      local: function (p) {
+        var M = window.MOCK;
+        if (!M) return false;
+        var s = {
+          id: 'p_' + Date.now(),
+          name: p.name, cuisine: p.cuisine, phone: p.phone,
+          address: p.address, city: p.city || '成都市', district: p.district || '武侯区',
+          hours: p.hours, intro: p.intro,
+          cover: p.cover, logo: p.logo || p.cover,
+          status: 'pending',
+          distance: null,          // 待审核店没有定位，见 docs/00 的坑位说明
+          weight: 0, pinned: false, canPostToday: false,
+          intervalHours: 24, dailyLimit: 1,
+          submittedAt: nowStr(),
+          stats: { dishes: 0, views: 0, likes: 0, favorites: 0, comments: 0, checkins: 0 }
+        };
+        upsert(M.pendingShops, s);
+        cache.me = s;
+        try { localStorage.setItem('merchantShopId', s.id); } catch (e) {}
+        return true;
+      },
+      apply: function (data) {
+        var M = window.MOCK;
+        if (M) upsert(M.pendingShops, data);
+        // 入驻后商家身份切到新店，审核页才查得到它的状态
+        try { localStorage.setItem('merchantShopId', data.id); } catch (e) {}
+        applyMerchantData({
+          shop: data, dishes: [], comments: [],
+          config: { priceTiers: cache.priceTiers, tasteTags: cache.tasteTags,
+                    cuisines: cache.cuisines, publishRule: cache.publishRule },
+          canPostToday: false, cooldownSeconds: 0
+        });
+      }
     }
   };
 
@@ -689,7 +996,8 @@
     }
 
     try {
-      var data = syncRequest('POST', def.path(payload), def.body ? def.body(payload) : payload);
+      var data = syncRequest(def.method || 'POST', def.path(payload),
+                             def.body ? def.body(payload) : payload);
       if (def.apply) def.apply(data, payload);
       return { ok: true, data: data };
     } catch (e) {
@@ -709,6 +1017,7 @@
 
     window.MOCK.act = act;
     window.MOCK.isOnline = online;
+    window.MOCK.preloadSync = preloadSync;   // 页面手动刷新用（如商家端审核页）
 
     var readMethods = ['getShop', 'getDish', 'getShopDishes', 'getDishComments', 'getTierByPrice'];
     readMethods.forEach(function (m) {

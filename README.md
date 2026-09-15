@@ -83,6 +83,7 @@ localStorage.setItem('useApi', '1'); location.reload();
 ```bash
 cd server/tools
 python test_admin_api.py         # 45 项平台端接口回归（11 组）
+python test_merchant_api.py      # 71 项商家端接口回归（12 组）
 python smoke_test.py 8080        # 21 项后端接口冒烟
 node test_adapter.cjs            # 27 项适配层行为测试（含后端挂掉的降级路径）
 node test_filter.cjs             # 39 项筛选逻辑单测
@@ -92,6 +93,7 @@ node test_filter.cjs             # 39 项筛选逻辑单测
 
 ```bash
 python drive_admin_e2e.py        # 平台端 8 页，31 项断言 + 截图到 .shots-admin/
+python drive_merchant_e2e.py     # 商家端 7 页，37 项断言 + 截图到 .shots-merchant/
 python drive_client.py           # 客户端页面体检，13 项 + 截图到 .shots/
 ```
 
@@ -100,6 +102,7 @@ python drive_client.py           # 客户端页面体检，13 项 + 截图到 .s
 > 内置的 3.13.12 没装，直接用会报「需要 websocket-client」。
 >
 > 端到端脚本的数量断言一律**跟后端实时对比**，不写死数字 —— 改种子数据不用改测试。
+> ⚠️ 带时间流逝的断言（冷却倒计时）要留容差，拿开场快照比会越比越偏。
 
 ---
 
@@ -182,18 +185,23 @@ python server/tools/export_mock.py  # 幂等，可重复跑
 | 验证 | 结果 |
 |---|---|
 | 平台端接口回归 `test_admin_api.py` | **45 / 45** |
+| 商家端接口回归 `test_merchant_api.py` | **71 / 71** |
 | 平台端浏览器端到端 `drive_admin_e2e.py` | **31 / 31** |
+| 商家端浏览器端到端 `drive_merchant_e2e.py` | **37 / 37** |
 | 筛选逻辑 `test_filter.cjs` | **39 / 39** |
 | 适配层行为 `test_adapter.cjs` | **27 / 27** |
 | 后端接口冒烟 `smoke_test.py` | **21 / 21** |
 | 客户端浏览器端到端 `drive_client.py` | **13 / 13** |
 
-**三端数据打通情况**：客户端 ✅ / 平台端 ✅（读 + 写全部落库）/ 商家端 ⏳（仍以本地假数据为主）。
+合计 **239 项断言全绿**。
+
+**三端数据打通情况**：客户端 ✅ / 平台端 ✅ / **商家端 ✅（读 + 写全部落库）**。
+全链路已闭合：商家发布 → 平台审核管控 → 客户端可见，任一端改动静另外两端立刻能感知。
 
 ### 已知待办
 
-- [ ] 后端鉴权（当前登录返回 mock token，需补 JWT）
+- [ ] 后端鉴权（当前登录返回 mock token，需补 JWT；商家身份暂存 `localStorage`）
 - [ ] 文件上传（`media` 目前由前端直接传 URL，需接 OSS）
 - [ ] CORS 收紧（当前开发期全放开）
-- [ ] 商家端 8 页逐页接后端（客户端与平台端已接）
+- [x] ~~商家端逐页接后端~~ ✅ 已完成（读写全落库）
 - [ ] 客户端仍有 1 处未确认的小问题（用户尚未说明具体现象）

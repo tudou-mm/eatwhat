@@ -189,10 +189,19 @@ let editing = null;
 
 (function init() {
   shop = MOCK.getShop(MOCK.currentMerchant.shopId);
+  // 接后端后可能取不到店（身份 id 对不上）——给提示，别让 shop.id 直接把页面搞崩
+  if (!shop) {
+    document.getElementById('body').innerHTML =
+      '<tr><td colspan="6"><div class="empty">' +
+      '<div class="empty__icon">⚠️</div>' +
+      '<div class="empty__text">未识别到你的店铺，请重新登录商家端</div></div></td></tr>';
+    return;
+  }
   render();
 })();
 
 function getList() {
+  if (!shop) return [];
   const kw = document.getElementById('kw').value.trim();
   const ft = document.getElementById('ft').value;
   return MOCK.getShopDishes(shop.id)
@@ -213,7 +222,10 @@ function render() {
 
   body.innerHTML = list.map(d => {
     const tier = MOCK.priceTiers.find(t => t.id === d.priceTierId);
-    const isLatest = list[0].id === d.id;
+    // 「首页展示中」只在未下架的菜里比 —— 否则最新那条恰好被下架时，
+    // 会把真正在首页的那道菜误标成「店铺页保留」
+    const live = list.filter(x => x.status !== 'removed');
+    const isLatest = live.length ? live[0].id === d.id : false;
     return `
     <tr>
       <td>
@@ -237,15 +249,19 @@ function render() {
       </td>
       <td class="text-13 text-2">${d.publishedAt}</td>
       <td>
-        ${isLatest
-          ? '<span class="tag tag--brand">首页展示中</span>'
-          : '<span class="tag tag--neutral">店铺页保留</span>'}
+        ${d.status === 'removed'
+          ? '<span class="tag tag--warning">已下架</span>'
+          : (isLatest
+              ? '<span class="tag tag--brand">首页展示中</span>'
+              : '<span class="tag tag--neutral">店铺页保留</span>')}
       </td>
       <td>
         <div class="ops">
           <button class="btn btn--text btn--sm" onclick="openEdit('${d.id}')">编辑</button>
           <button class="btn btn--text btn--sm" onclick="viewFront('${d.id}')">前台</button>
-          <button class="btn btn--text btn--sm" style="color:var(--danger)" onclick="delDish('${d.id}')">删除</button>
+          ${d.status === 'removed'
+            ? `<button class="btn btn--text btn--sm" onclick="restoreDish('${d.id}')">恢复</button>`
+            : `<button class="btn btn--text btn--sm" style="color:var(--danger)" onclick="offlineDish('${d.id}')">下架</button>`}
         </div>
       </td>
     </tr>`;
@@ -295,29 +311,54 @@ function saveDish() {
   const name = document.getElementById('eName').value.trim();
   if (!name) { toast('菜品名称不能为空'); return; }
 
-  editing.name = name;
-  editing.desc = document.getElementById('eDesc').value.trim();
-  const p = document.getElementById('ePrice').value;
-  editing.price = p ? Number(p) : null;
-  editing.priceTierId = p ? MOCK.getTierByPrice(p).id : null;
+  const dishId = editing.id;
+  const priceRaw = document.getElementById('ePrice').value;
+
+  // 不再直接改本地对象 —— 价格档必须由服务端重新归档，
+  // 成功后适配层会用服务端返回值回写，两边口径才不会走偏
+  const r = MOCK.act('merchant.dish.update', {
+    id: dishId,
+    name: name,
+    desc: document.getElementById('eDesc').value.trim(),
+    price: priceRaw === '' ? null : Number(priceRaw)
+  });
+
+  if (!r.ok) { toast('保存失败：' + (r.msg || '未知错误')); return; }
 
   closeDrawer();
   render();
   toast('已保存修改');
-  track('merchant_edit_dish', { dishId: editing?.id });
+  track('merchant_edit_dish', { dishId: dishId });
 }
 
 function viewFront(id) {
   window.open('../client/dish.html?id=' + id, '_blank');
 }
 
-function delDish(id) {
+/*
+ * 这里是「下架」，不是「删除」。
+ * 冻结规则要求内容只做逻辑下架（status=removed），不物理删除 ——
+ * 原来直接 MOCK.dishes.splice() 把记录抹掉，平台端的内容管理和
+ * 举报追溯就再也对不上账了。下架可逆，恢复走 restoreDish。
+ */
+function offlineDish(id) {
   const d = MOCK.getDish(id);
-  if (!confirm(`确定删除「${d.name}」？删除后店铺页也不再展示。`)) return;
-  const i = MOCK.dishes.indexOf(d);
-  if (i > -1) MOCK.dishes.splice(i, 1);
+  if (!d) return;
+  if (!confirm(`确定下架「${d.name}」？下架后客户端和店铺页都不再展示，可随时恢复。`)) return;
+
+  const r = MOCK.act('merchant.dish.remove', { id: id });
+  if (!r.ok) { toast('下架失败：' + (r.msg || '未知错误')); return; }
+
   render();
-  toast('已删除');
+  toast('已下架');
+}
+
+function restoreDish(id) {
+  const r = MOCK.act('merchant.dish.restore', { id: id });
+  if (!r.ok) { toast('恢复失败：' + (r.msg || '未知错误')); return; }
+
+  render();
+  toast('已恢复上架');
 }
 
 let toastTimer;

@@ -15,9 +15,11 @@ import java.util.Map;
 public class ShopService {
 
     private final ShopRepository repo;
+    private final ConfigService configService;
 
-    public ShopService(ShopRepository repo) {
+    public ShopService(ShopRepository repo, ConfigService configService) {
         this.repo = repo;
+        this.configService = configService;
     }
 
     public List<Shop> listAll() {
@@ -200,6 +202,50 @@ public class ShopService {
 
     /** 保存店铺（内部使用） */
     public Shop save(Shop s) {
+        return repo.save(s);
+    }
+
+    /**
+     * 商家入驻申请：落成一家「待审核」店铺。
+     *
+     * 三个必须守住的点：
+     * 1. status = pending，不能直接 normal —— 平台审核这道闸门不能绕。
+     * 2. ⚠️ distance / lat / lng 一律 null。待审核店铺还没做过地理校验，
+     *    给 0 会让它在「附近」排序里排到所有真实店铺前面，白吃掉首页流量。
+     * 3. 发布规则取平台「当前」默认值 —— 新店从此刻的规则开始算，
+     *    和「规则变更不影响已发记录」是同一条规则的两面。
+     */
+    public Shop createPending(Map<String, Object> body) {
+        String name = str(body.get("name"));
+        if (name == null || name.isBlank()) throw new BizException("请填写店铺名称");
+        String phone = str(body.get("phone"));
+        if (phone == null || phone.isBlank()) throw new BizException("请填写联系电话");
+
+        Map<String, Object> rule = configService.publishRule();
+
+        Shop s = new Shop();
+        s.setId("s_" + System.currentTimeMillis());
+        s.setName(name);
+        s.setCuisine(str(body.get("cuisine")));
+        s.setCity(str(body.get("city")));
+        s.setDistrict(str(body.get("district")));
+        s.setAddress(str(body.get("address")));
+        s.setPhone(phone);
+        s.setHours(str(body.get("hours")));
+        s.setIntro(str(body.get("intro")));
+        s.setCover(str(body.get("cover")));
+        s.setLogo(str(body.get("logo")));
+
+        s.setStatus("pending");
+        s.setDistance(null);      // 见上文第 2 点
+        s.setLat(null);
+        s.setLng(null);
+        s.setCanPostToday(false); // 没过审谈不上发布
+        s.setWeight(0);
+        s.setPinned(false);
+        s.setIntervalHours(((Number) rule.get("intervalHours")).intValue());
+        s.setDailyLimit(((Number) rule.get("dailyLimit")).intValue());
+        s.setSubmittedAt(now());
         return repo.save(s);
     }
 

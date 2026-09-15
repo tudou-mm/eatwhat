@@ -278,24 +278,26 @@ function submitApply() {
   if (!phone) { toast('请填写联系电话'); return; }
   if (!open || !close) { toast('请填写营业时间'); return; }
 
-  const applying = {
-    id: 'p_new',
+  // 真正提交：在线落成一家 pending 店铺，离线只塞进本地数组。
+  // 待审核店铺不会被客户端看到（服务端 listVisible 会排除），
+  // 且 distance 由服务端置空 —— 这些都不需要页面操心。
+  const r = MOCK.act('merchant.apply', {
     name: name,
-    logo: coverImg,
-    cover: coverImg,
+    cuisine: cuisine,
     address: addr,
     city: '成都市',
     district: '武侯区',
     phone: phone,
     hours: open + ' - ' + close,
-    cuisine: cuisine,
     intro: document.getElementById('fIntro').value.trim(),
-    submittedAt: new Date().toLocaleString('zh-CN'),
-    photos: photos,
-    status: 'pending'
-  };
+    cover: coverImg,
+    logo: coverImg
+  });
 
-  sessionStorage.setItem('applying', JSON.stringify(applying));
+  if (!r.ok) { toast('提交失败：' + (r.msg || '未知错误')); return; }
+
+  // 给 audit 页留一份兜底数据：后端没接上时它读不到服务端结果
+  sessionStorage.setItem('applying', JSON.stringify(r.data || {}));
   location.href = 'audit.html';
 }
 
