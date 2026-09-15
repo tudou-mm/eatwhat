@@ -101,6 +101,36 @@ public class ConfigService {
         repo.save(c);
     }
 
+    // ==================== 全局默认发布规则 ====================
+
+    /**
+     * 全局默认发布规则。
+     * 它决定新店铺的初始值，也是单店「自定义」标记的比较基准 ——
+     * 所以必须落库，不能只放在前端内存里（刷新就丢，还会把
+     * 所有店铺都误判成"自定义"）。
+     */
+    public Map<String, Object> publishRule() {
+        PlatformConfig c = get();
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("intervalHours", c.getDefaultIntervalHours() == null ? 24 : c.getDefaultIntervalHours());
+        m.put("dailyLimit", c.getDefaultDailyLimit() == null ? 1 : c.getDefaultDailyLimit());
+        return m;
+    }
+
+    public Map<String, Object> savePublishRule(Integer intervalHours, Integer dailyLimit) {
+        if (intervalHours != null && (intervalHours < 1 || intervalHours > 168)) {
+            throw new BizException("发布间隔应在 1-168 小时之间");
+        }
+        if (dailyLimit != null && (dailyLimit < 1 || dailyLimit > 10)) {
+            throw new BizException("每日上限应在 1-10 条之间");
+        }
+        PlatformConfig c = get();
+        if (intervalHours != null) c.setDefaultIntervalHours(intervalHours);
+        if (dailyLimit != null) c.setDefaultDailyLimit(dailyLimit);
+        repo.save(c);
+        return publishRule();
+    }
+
     // ==================== JSON 工具 ====================
 
     private String toJson(Object o) {

@@ -143,7 +143,8 @@
               <span class="text-12 text-4">拖动 ⠿ 调整顺序</span>
             </div>
 
-            <table class="table">
+            <div class="table-scroll">
+              <table class="table">
               <thead>
                 <tr>
                   <th style="width:52px">排名</th>
@@ -156,6 +157,7 @@
               </thead>
               <tbody id="rankBody"></tbody>
             </table>
+            </div>
           </div>
 
           <div class="alert alert--info mt-16">
@@ -193,20 +195,29 @@ let state = {
   unpaidBackup: null
 };
 
+/**
+ * 参与排名的店铺 —— 只含已上线的。
+ * 待审核 / 已驳回的店在客户端根本不展示，把它们放进推荐排名没有意义，
+ * 而且会在"客户端预览"里误导运营。
+ */
+function activeShops() {
+  return (MOCK.shops || []).filter(s => s.status === 'normal' || s.status === 'muted');
+}
+
 /* ---------- 初始化 ---------- */
 (function init() {
-  const dists = [...new Set(MOCK.shops.map(s => s.district))];
+  const dists = [...new Set(activeShops().map(s => s.district))];
   document.getElementById('distSel').innerHTML =
     '<option value="">全部区县</option>' + dists.map(d => `<option>${d}</option>`).join('');
 
-  const sorted = MOCK.sortShops(MOCK.shops.filter(s => s.city === state.city));
+  const sorted = MOCK.sortShops(activeShops().filter(s => s.city === state.city));
   state.orders = sorted.map(s => s.id);
   render();
 })();
 
 function onCityChange() {
   state.city = document.getElementById('citySel').value;
-  const sorted = MOCK.sortShops(MOCK.shops.filter(s => s.city === state.city));
+  const sorted = MOCK.sortShops(activeShops().filter(s => s.city === state.city));
   state.orders = sorted.map(s => s.id);
   render();
 }
@@ -327,10 +338,17 @@ function bindDrag() {
 }
 
 /* ---------- 操作 ---------- */
+/*
+ * 写操作统一走 MOCK.act：
+ *   后端在线 → 真落库，改完客户端排序立刻生效
+ *   后端不在 → 改内存，原型照样能演示
+ */
 function setWeight(id, val) {
-  const s = MOCK.getShop(id);
-  s.weight = Math.max(0, Math.min(99, Number(val) || 0));
+  const w = Math.max(0, Math.min(99, Number(val) || 0));
+  const r = MOCK.act('shop.weight', { id: id, weight: w });
+  if (!r.ok) { toast(r.msg || '保存失败'); return; }
   applyWeightSort();
+  toast('权重已保存');
 }
 
 function applyWeightSort() {
@@ -344,20 +362,40 @@ function applyWeightSort() {
 
 function togglePin(id) {
   const s = MOCK.getShop(id);
-  s.pinned = !s.pinned;
+  if (!s) return;
+  const next = !s.pinned;
+
+  const r = MOCK.act('shop.pinned', { id: id, pinned: next });
+  if (!r.ok) { toast(r.msg || '操作失败，请重试'); return; }
+
   applyWeightSort();
-  toast(s.pinned ? `已置顶「${s.name}」` : `已取消置顶「${s.name}」`);
+  toast(next ? `已置顶「${s.name}」` : `已取消置顶「${s.name}」`);
+  track('admin_pin_shop', { shopId: id, pinned: next });
 }
 
 function resetOrder() {
   if (!confirm('恢复为系统默认排序（置顶 > 权重 > 距离）？')) return;
-  const sorted = MOCK.sortShops(MOCK.shops.filter(s => s.city === state.city));
+  const sorted = MOCK.sortShops(activeShops().filter(s => s.city === state.city));
   state.orders = sorted.map(s => s.id);
   render();
-  toast('已恢复默认排序');
+  toast('已恢复默认排序（未保存，点「保存排序」才会落库）');
 }
 
+/**
+ * 保存排序。
+ *
+ * 顺序是"人在界面上拖出来的结果"，而权重是唯一能落库的字段 ——
+ * 所以把顺序翻译成递减权重，客户端按权重排出来就是同一个顺序。
+ * 后端 applyOrder 用的是同一套口径。
+ */
 function saveOrder() {
+  const r = MOCK.act('ranking.order', { shopIds: state.orders });
+  if (!r.ok) { toast(r.msg || '保存失败，请重试'); return; }
+
+  // 用落库后的权威顺序重置本地列表，避免两边对不上
+  const sorted = MOCK.sortShops(activeShops().filter(s => s.city === state.city));
+  state.orders = sorted.map(s => s.id);
+  render();
   toast('排序已保存，客户端即时生效');
   track('admin_save_ranking', { city: state.city, order: state.orders });
 }

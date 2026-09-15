@@ -28,12 +28,96 @@ public class ShopService {
         return repo.findById(id).orElseThrow(() -> new BizException(404, "店铺不存在"));
     }
 
-    /** 客户端可见的店铺（排除封禁） */
+    /**
+     * 客户端可见的店铺。
+     * 排除三类：banned（封店）、pending（还没过审）、rejected（已被驳回）。
+     * muted 仍可见 —— 禁言只是不能发布和回评，店还是正常营业的。
+     */
     public List<Shop> listVisible() {
         return repo.findAll().stream()
-                .filter(s -> !"banned".equals(s.getStatus()))
+                .filter(s -> !isHidden(s.getStatus()))
                 .toList();
     }
+
+    private boolean isHidden(String status) {
+        return "banned".equals(status) || "pending".equals(status) || "rejected".equals(status);
+    }
+
+    // ==================== 商家入驻审核 ====================
+
+    /** 待审核商家，按提交时间倒序（新的在前，运营优先看） */
+    public List<Shop> listPending() {
+        return repo.findAll().stream()
+                .filter(s -> "pending".equals(s.getStatus()))
+                .sorted((a, b) -> str(b.getSubmittedAt()).compareTo(str(a.getSubmittedAt())))
+                .toList();
+    }
+
+    /** 已通过审核的店铺，按审核时间倒序 */
+    public List<Shop> listApproved() {
+        return repo.findAll().stream()
+                .filter(s -> s.getReviewedAt() != null && !"rejected".equals(s.getStatus()))
+                .sorted((a, b) -> str(b.getReviewedAt()).compareTo(str(a.getReviewedAt())))
+                .toList();
+    }
+
+    /** 已驳回的店铺，按审核时间倒序 */
+    public List<Shop> listRejected() {
+        return repo.findAll().stream()
+                .filter(s -> "rejected".equals(s.getStatus()))
+                .sorted((a, b) -> str(b.getReviewedAt()).compareTo(str(a.getReviewedAt())))
+                .toList();
+    }
+
+    /**
+     * 审核通过：pending → normal。
+     * 只有 pending 状态才允许审核，避免对已在营店铺重复操作。
+     */
+    public Shop approve(String id, String reviewer) {
+        Shop s = get(id);
+        if (!"pending".equals(s.getStatus())) {
+            throw new BizException("该商家当前状态为「" + statusName(s.getStatus()) + "」，无需重复审核");
+        }
+        s.setStatus("normal");
+        s.setReviewer(reviewer == null || reviewer.isBlank() ? "平台运营" : reviewer);
+        s.setReviewedAt(now());
+        s.setRejectReason(null);
+        return repo.save(s);
+    }
+
+    /** 审核驳回：pending → rejected，必须填理由（要回显给商家） */
+    public Shop reject(String id, String reason, String reviewer) {
+        if (reason == null || reason.isBlank()) {
+            throw new BizException("驳回必须填写理由");
+        }
+        Shop s = get(id);
+        if (!"pending".equals(s.getStatus())) {
+            throw new BizException("该商家当前状态为「" + statusName(s.getStatus()) + "」，无需重复审核");
+        }
+        s.setStatus("rejected");
+        s.setRejectReason(reason);
+        s.setReviewer(reviewer == null || reviewer.isBlank() ? "平台运营" : reviewer);
+        s.setReviewedAt(now());
+        return repo.save(s);
+    }
+
+    private String statusName(String s) {
+        return switch (s == null ? "" : s) {
+            case "pending" -> "待审核";
+            case "normal" -> "已通过";
+            case "rejected" -> "已驳回";
+            case "muted" -> "已禁言";
+            case "banned" -> "已封店";
+            default -> s;
+        };
+    }
+
+    private String now() {
+        return java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai"))
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+    }
+
+    private String str(String s) { return s == null ? "" : s; }
 
     // ==================== 违规三级处理 ====================
 

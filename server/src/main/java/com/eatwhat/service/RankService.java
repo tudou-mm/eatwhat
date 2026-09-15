@@ -66,8 +66,14 @@ public class RankService {
         List<Shop> list = (city == null || city.isBlank())
                 ? shopRepo.findAll()
                 : shopRepo.findByCityOrderByWeightDesc(city);
-        // 封禁的店铺不出现在客户端
-        list = list.stream().filter(s -> !"banned".equals(s.getStatus())).collect(Collectors.toList());
+        // 客户端只看得到真正上线的店：
+        // 封禁、待审核、已驳回的一律排除。
+        // 尤其是待审核的店 —— 它们没有 distance（null），不排掉的话
+        // 会被 sortShops 当成"最远"或者因脏数据插到榜首，污染推荐结果。
+        list = list.stream().filter(s -> {
+            String st = s.getStatus();
+            return !"banned".equals(st) && !"pending".equals(st) && !"rejected".equals(st);
+        }).collect(Collectors.toList());
         return sortShops(list);
     }
 

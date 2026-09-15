@@ -4,8 +4,11 @@ import jakarta.persistence.*;
 
 /**
  * 店铺。
- * status: normal | muted(禁言) | banned(封店)
+ * status: pending(待审核) | normal | muted(禁言) | banned(封店) | rejected(已驳回)
  * 发布规则：intervalHours + dailyLimit，平台可单店覆盖（默认 24 / 1）
+ *
+ * 审核字段说明：平台只审店铺、不审菜品（冻结规则第 8 条），
+ * 所以 pending 是店铺维度的状态，审核通过前客户端完全看不到这家店。
  */
 @Entity
 @Table(name = "shop")
@@ -35,8 +38,21 @@ public class Shop {
     private Double lng;
     private Double distance;
 
-    /** normal | muted | banned */
+    /** normal | muted | banned | pending | rejected */
     private String status = "normal";
+
+    /** 商家提交审核时间，'yyyy-MM-dd HH:mm'，与前端展示格式一致 */
+    private String submittedAt;
+
+    /** 平台审核时间 */
+    private String reviewedAt;
+
+    /** 审核人 */
+    private String reviewer;
+
+    /** 驳回理由，仅在 status=rejected 时有值 */
+    @Column(length = 500)
+    private String rejectReason;
 
     /** 今日是否还能发（由发布时间动态算，这里缓存一份给列表提速） */
     private Boolean canPostToday = true;
@@ -92,6 +108,14 @@ public class Shop {
     public void setDistance(Double distance) { this.distance = distance; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public String getSubmittedAt() { return submittedAt; }
+    public void setSubmittedAt(String submittedAt) { this.submittedAt = submittedAt; }
+    public String getReviewedAt() { return reviewedAt; }
+    public void setReviewedAt(String reviewedAt) { this.reviewedAt = reviewedAt; }
+    public String getReviewer() { return reviewer; }
+    public void setReviewer(String reviewer) { this.reviewer = reviewer; }
+    public String getRejectReason() { return rejectReason; }
+    public void setRejectReason(String rejectReason) { this.rejectReason = rejectReason; }
     public Boolean getCanPostToday() { return canPostToday; }
     public void setCanPostToday(Boolean canPostToday) { this.canPostToday = canPostToday; }
     public Integer getWeight() { return weight; }

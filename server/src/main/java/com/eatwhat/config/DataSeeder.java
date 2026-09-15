@@ -69,15 +69,17 @@ public class DataSeeder implements CommandLineRunner {
         long now = System.currentTimeMillis();
         long h = 3600_000L;
 
+        // 前三家发布时间刻意放在几小时内 —— 这样「今日发布菜品」和近 7 日趋势
+        // 有真实数据可看，同时它们仍在 24h 内，能演示时间衰减。
         shop("s_001", "蜀香小馆", "川菜", "成都市", "武侯区", "武侯区科华北路 12 号", "028-85123456",
                 "11:00-22:00", "开了十年的苍蝇馆子，麻婆豆腐是招牌。",
-                30.65, 104.07, 0.8, false, 100, false, now - 15 * h, 3200, 412, 188, 36, 24, 24, 1);
+                30.65, 104.07, 0.8, false, 100, false, now - 2 * h, 3200, 412, 188, 36, 24, 24, 1);
         shop("s_002", "老李炭火烧烤", "烧烤", "成都市", "武侯区", "武侯区一环路南三段 88 号", "028-85234567",
                 "17:00-02:00", "炭火现烤，五花肉厚切。",
-                30.64, 104.08, 1.2, true, 90, false, now - 20 * h, 2810, 356, 142, 28, 19, 24, 1);
+                30.64, 104.08, 1.2, true, 90, false, now - 4 * h, 2810, 356, 142, 28, 19, 24, 1);
         shop("s_003", "川味坊", "川菜", "成都市", "锦江区", "锦江区春熙路 5 号", "028-85345678",
                 "10:00-21:00", "家常川菜，回锅肉一绝。",
-                30.66, 104.09, 2.1, true, 80, false, now - 26 * h, 1420, 168, 62, 12, 8, 24, 1);
+                30.66, 104.09, 2.1, true, 80, false, now - 6 * h, 1420, 168, 62, 12, 8, 24, 1);
         shop("s_004", "一味面馆", "面食", "成都市", "武侯区", "武侯区人民南路 33 号", "028-85456789",
                 "07:00-20:00", "红油抄手，皮薄馅大。",
                 30.63, 104.06, 0.5, true, 70, false, now - 30 * h, 1180, 142, 58, 9, 31, 24, 1);
@@ -87,6 +89,84 @@ public class DataSeeder implements CommandLineRunner {
         shop("s_006", "老字号甜水面", "小吃", "成都市", "青羊区", "青羊区宽窄巷子 8 号", "028-85678901",
                 "09:00-19:00", "一根面拇指粗，酱料甜辣。",
                 30.68, 104.05, 4.2, false, 50, false, now - 28 * h, 980, 176, 84, 15, 47, 24, 1);
+
+        // 给已上线的店补审核记录，让「已通过」列表有历史可看。
+        // 没有这一步，平台端审核页的"已通过"永远是空的。
+        markReviewed("s_001", "2026-09-10 14:20", "2026-09-10 09:05");
+        markReviewed("s_002", "2026-09-09 11:30", "2026-09-09 08:40");
+        markReviewed("s_003", "2026-09-08 16:05", "2026-09-08 10:12");
+        markReviewed("s_004", "2026-09-07 15:22", "2026-09-07 09:30");
+        markReviewed("s_005", "2026-09-06 14:10", "2026-09-06 11:00");
+        markReviewed("s_006", "2026-09-05 17:45", "2026-09-05 13:20");
+
+        // 待审核队列 —— 平台端「商家审核」页的数据源。
+        // 审核通过前客户端完全看不到这两家店（listVisible 会过滤掉 pending）。
+        auditShop("p_001", "新开的螺蛳粉", "小吃", "成都市", "成华区",
+                "成华区建设路 66 号", "028-88887777", "10:00-23:00",
+                "正宗柳州味道，酸笋每天现发。", "2026-09-14 09:15", "pending", null, null);
+
+        auditShop("p_002", "巷子口串串香", "火锅", "成都市", "金牛区",
+                "金牛区抚琴西路 8 号", "028-88888888", "16:00-03:00",
+                "老巷子里的苍蝇馆子，开了七年。", "2026-09-14 10:02", "pending", null, null);
+
+        // 一条已驳回的历史记录，演示驳回理由回显
+        auditShop("p_r1", "无名小摊", "小吃", "成都市", "金牛区",
+                "成都市某处", "028-00000000", "不定", "",
+                "2026-09-08 09:00", "rejected",
+                "门头图不清晰，无法辨认店铺招牌，且未填写详细地址", "2026-09-08 10:20");
+    }
+
+    /** 给已上线店铺补审核痕迹（审核人 + 审核时间） */
+    private void markReviewed(String id, String reviewedAt, String submittedAt) {
+        shopRepo.findById(id).ifPresent(s -> {
+            s.setReviewedAt(reviewedAt);
+            s.setSubmittedAt(submittedAt);
+            s.setReviewer("平台运营");
+            shopRepo.save(s);
+        });
+    }
+
+    /**
+     * 待审核 / 已驳回的商家。
+     * 这类店还没正式上线，因此没有距离、权重、统计数据 —— 全部给 0，
+     * 避免平台端列表出现 null 让页面渲染出 "undefined"。
+     */
+    private void auditShop(String id, String name, String cuisine, String city, String district,
+                           String address, String phone, String hours, String intro,
+                           String submittedAt, String status, String rejectReason, String reviewedAt) {
+        Shop s = new Shop();
+        s.setId(id);
+        s.setName(name);
+        s.setCuisine(cuisine);
+        s.setCity(city);
+        s.setDistrict(district);
+        s.setAddress(address);
+        s.setPhone(phone);
+        s.setHours(hours);
+        s.setIntro(intro);
+        s.setLat(30.66);
+        s.setLng(104.07);
+        // 还没上线的店没有真实距离。给 null 而不是 0 ——
+        // 0 在排序里等于"就在你脚下"，会把没上线的店顶到推荐榜首。
+        s.setDistance(null);
+        s.setStatus(status);
+        s.setSubmittedAt(submittedAt);
+        s.setReviewedAt(reviewedAt);
+        s.setRejectReason(rejectReason);
+        if (reviewedAt != null) s.setReviewer("平台运营");
+        s.setCanPostToday(false);
+        s.setWeight(0);
+        s.setPinned(false);
+        s.setIntervalHours(24);
+        s.setDailyLimit(1);
+        s.setStatViews(0);
+        s.setStatLikes(0);
+        s.setStatFavorites(0);
+        s.setStatComments(0);
+        s.setStatCheckins(0);
+        s.setCover("https://picsum.photos/seed/" + id + "cover/800/600");
+        s.setLogo("https://picsum.photos/seed/" + id + "logo/200/200");
+        shopRepo.save(s);
     }
 
     private void shop(String id, String name, String cuisine, String city, String district,
@@ -133,16 +213,16 @@ public class DataSeeder implements CommandLineRunner {
         dish("d_001", "s_001", "蜀香小馆", "麻婆豆腐", "石磨豆腐配自家花椒，麻辣鲜香。",
                 "image", List.of("https://picsum.photos/seed/dish1a/800/1200",
                         "https://picsum.photos/seed/dish1b/800/1200"),
-                28.0, "tier_mid", "real", List.of("麻辣"), now - 14 * h, 3200, 412, 188, 36, 24);
+                28.0, "tier_mid", "real", List.of("麻辣"), now - 2 * h, 3200, 412, 188, 36, 24);
 
         dish("d_002", "s_002", "老李炭火烧烤", "炭烤五花肉", "厚切带皮五花，炭火慢烤四十分钟，外焦里嫩。",
                 "video", List.of("https://picsum.photos/seed/dish2a/800/1200"),
-                68.0, "tier_high", "real", List.of("烧烤"), now - 19 * h, 2810, 356, 142, 28, 19);
+                68.0, "tier_high", "real", List.of("烧烤"), now - 4 * h, 2810, 356, 142, 28, 19);
 
         dish("d_003", "s_003", "川味坊", "回锅肉", "",
                 "image", List.of("https://picsum.photos/seed/dish3a/800/1200",
                         "https://picsum.photos/seed/dish3b/800/1200"),
-                42.0, "tier_mid", "ad", List.of("麻辣"), now - 25 * h, 1420, 168, 62, 12, 8);
+                42.0, "tier_mid", "ad", List.of("麻辣"), now - 6 * h, 1420, 168, 62, 12, 8);
 
         dish("d_004", "s_005", "樱町日料", "蓝鳍金枪鱼大腹", "每日空运，限量六份。油脂分布像雪花一样。",
                 "image", List.of("https://picsum.photos/seed/dish4a/800/1200",

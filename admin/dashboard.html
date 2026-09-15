@@ -20,6 +20,8 @@
   .kpi__delta--flat { color: var(--text-4); }
 
   .kpi--alert .kpi__num { color: var(--danger); }
+  .kpi--link { cursor: pointer; }
+  .kpi--link:hover { border-color: var(--brand); }
 
   .grid2 { display: grid; grid-template-columns: 1fr 340px; gap: 20px; align-items: start; }
 
@@ -75,9 +77,9 @@
     <div class="sidebar__logo"><div class="sidebar__logo-dot"></div><span>吃什么 · 平台</span></div>
     <nav class="sidebar__nav">
       <a class="nav-item is-active" href="dashboard.html">数据概览</a>
-      <a class="nav-item" href="audit-shops.html">商家审核 <span class="nav-item__badge">2</span></a>
+      <a class="nav-item" href="audit-shops.html">商家审核 <span class="nav-item__badge" id="navAuditBadge"></span></a>
       <a class="nav-item" href="shops.html">店铺管理</a>
-      <a class="nav-item" href="contents.html">内容管理</a>
+      <a class="nav-item" href="contents.html">内容管理 <span class="nav-item__badge" id="navReportBadge"></span></a>
       <a class="nav-item" href="ranking.html">推荐排名</a>
       <a class="nav-item" href="rules.html">发布规则</a>
       <a class="nav-item" href="config.html">价格档 / 标签</a>
@@ -89,10 +91,6 @@
     <header class="topbar">
       <div class="topbar__title">数据概览</div>
       <div class="topbar__spacer"></div>
-      <select class="select" style="width:130px;height:32px;font-size:13px">
-        <option>成都市</option>
-        <option>重庆市</option>
-      </select>
       <div class="topbar__user">
         <div class="avatar">运</div>
         <span style="font-size:13px">平台运营</span>
@@ -103,30 +101,30 @@
 
       <!-- KPI -->
       <div class="kpi-grid">
-        <div class="kpi">
+        <div class="kpi kpi--link" onclick="location.href='shops.html'">
           <div class="kpi__label">在营店铺</div>
-          <div class="kpi__num">6</div>
-          <div class="kpi__delta kpi__delta--up">↑ 本周 +2</div>
+          <div class="kpi__num" id="kpiShop">—</div>
+          <div class="kpi__delta kpi__delta--flat" id="kpiShopD">—</div>
         </div>
-        <div class="kpi kpi--alert">
+        <div class="kpi kpi--link" style="cursor:pointer" onclick="location.href='audit-shops.html'">
           <div class="kpi__label">待审核商家</div>
-          <div class="kpi__num" id="kpiPending">2</div>
-          <div class="kpi__delta kpi__delta--flat">需尽快处理</div>
+          <div class="kpi__num" id="kpiPending">—</div>
+          <div class="kpi__delta kpi__delta--flat" id="kpiPendingD">—</div>
         </div>
-        <div class="kpi">
+        <div class="kpi kpi--link" onclick="location.href='contents.html'">
           <div class="kpi__label">今日发布菜品</div>
-          <div class="kpi__num">5</div>
-          <div class="kpi__delta kpi__delta--up">↑ 较昨日 +1</div>
+          <div class="kpi__num" id="kpiDishToday">—</div>
+          <div class="kpi__delta kpi__delta--flat" id="kpiDishD">—</div>
         </div>
-        <div class="kpi">
-          <div class="kpi__label">今日活跃用户</div>
-          <div class="kpi__num">1,286</div>
-          <div class="kpi__delta kpi__delta--up">↑ 8.2%</div>
+        <div class="kpi kpi--link" onclick="location.href='users.html'">
+          <div class="kpi__label">注册用户</div>
+          <div class="kpi__num" id="kpiUser">—</div>
+          <div class="kpi__delta kpi__delta--flat" id="kpiUserD">—</div>
         </div>
-        <div class="kpi kpi--alert">
+        <div class="kpi kpi--link kpi--alert" onclick="location.href='contents.html'">
           <div class="kpi__label">待处理举报</div>
-          <div class="kpi__num" id="kpiReport">2</div>
-          <div class="kpi__delta kpi__delta--flat">含恶意差评</div>
+          <div class="kpi__num" id="kpiReport">—</div>
+          <div class="kpi__delta kpi__delta--flat" id="kpiReportD">—</div>
         </div>
       </div>
 
@@ -135,9 +133,9 @@
           <!-- 趋势图 -->
           <div class="card mb-16">
             <div class="card__head">
-              <div class="card__title">近 7 日发布与活跃趋势</div>
+              <div class="card__title">近 7 日发布趋势</div>
               <div class="card__spacer"></div>
-              <div class="card__subtitle">单位：条 / 人</div>
+              <div class="card__subtitle">单位：条</div>
             </div>
             <div class="card__body">
               <div class="chart-box">
@@ -161,34 +159,7 @@
           <div class="card__head">
             <div class="card__title">待办事项</div>
           </div>
-          <div class="card__body" style="padding-top:4px">
-            <div class="todo-item">
-              <div class="todo-item__icon" style="background:#FFF7E6;color:#D46B08">🏪</div>
-              <div class="todo-item__main">
-                <div class="todo-item__title">2 家商家待审核</div>
-                <div class="todo-item__desc">新开的螺蛳粉、巷子口串串香</div>
-              </div>
-              <a class="btn btn--sm btn--outline" href="audit-shops.html">去处理</a>
-            </div>
-
-            <div class="todo-item">
-              <div class="todo-item__icon" style="background:#FFF1F0;color:var(--danger)">⚠</div>
-              <div class="todo-item__main">
-                <div class="todo-item__title">2 条举报待处理</div>
-                <div class="todo-item__desc">含 1 条商家举报的恶意刷差评</div>
-              </div>
-              <a class="btn btn--sm btn--outline" href="contents.html">去处理</a>
-            </div>
-
-            <div class="todo-item">
-              <div class="todo-item__icon" style="background:#E6F4FF;color:var(--info)">📌</div>
-              <div class="todo-item__main">
-                <div class="todo-item__title">推荐排名待调整</div>
-                <div class="todo-item__desc">蜀香小馆置顶已持续 3 天</div>
-              </div>
-              <a class="btn btn--sm btn--outline" href="ranking.html">去调整</a>
-            </div>
-          </div>
+          <div class="card__body" style="padding-top:4px" id="todos"></div>
         </div>
       </div>
 
@@ -200,39 +171,211 @@
 <script src="../assets/js/api.js"></script>
 <script>
 (function init() {
-  // 趋势柱状
-  const data = [
-    { d: '周一', v: 3 }, { d: '周二', v: 4 }, { d: '周三', v: 2 },
-    { d: '周四', v: 5 }, { d: '周五', v: 6 }, { d: '周六', v: 4 }, { d: '今日', v: 5 }
-  ];
-  const max = Math.max(...data.map(x => x.v));
-  document.getElementById('bars').innerHTML = data.map(x => `
-    <div class="bar-col">
-      <div style="flex:1;display:flex;align-items:flex-end;width:100%;justify-content:center">
-        <div class="bar" style="height:${(x.v / max) * 100}%">
-          <div class="bar__val">${x.v}</div>
-        </div>
-      </div>
-      <div class="bar__label">${x.d}</div>
-    </div>
-  `).join('');
+  var o = overview();
 
-  // 热门店铺
-  const hot = [...MOCK.shops].sort((a, b) => b.stats.views - a.stats.views);
-  document.getElementById('hotShops').innerHTML = hot.map((s, i) => `
-    <div class="rank-mini">
-      <div class="rank-mini__no ${i < 3 ? 'rank-mini__no--top' : ''}">${i + 1}</div>
-      <div style="width:28px;height:28px;border-radius:7px;overflow:hidden;background:var(--bg-hover)">
-        <img src="${s.logo}" style="width:100%;height:100%;object-fit:cover">
-      </div>
-      <div class="rank-mini__name">${s.name}</div>
-      <div class="rank-mini__val">${MOCK.fmtNum(s.stats.views)} 浏览</div>
-    </div>
-  `).join('');
+  // ---- KPI ----
+  // 「在营」= 已上线可营业（normal + muted）；
+  // shopCount 是含待审核/已驳回的总数，用在这里会虚高，不要直接拿
+  var onShelf = (o.shopNormal || 0) + (o.shopMuted || 0);
+  document.getElementById('kpiShop').textContent = onShelf;
+  document.getElementById('kpiShopD').textContent =
+    o.shopBanned ? ('已封禁 ' + o.shopBanned + ' 家')
+      : (o.shopMuted ? (o.shopMuted + ' 家禁言中') : '全部正常营业');
 
-  document.getElementById('kpiPending').textContent = MOCK.pendingShops.length;
-  document.getElementById('kpiReport').textContent = MOCK.reports.filter(r => r.status === 'pending').length;
+  setKpi('kpiPending', 'kpiPendingD', o.shopPending, o.shopPending ? '需尽快处理' : '全部处理完啦', o.shopPending > 0);
+
+  document.getElementById('kpiDishToday').textContent = o.dishToday;
+  document.getElementById('kpiDishD').textContent = o.dishDeltaMsg;
+
+  document.getElementById('kpiUser').textContent = MOCK.fmtNum(o.userCount);
+  document.getElementById('kpiUserD').textContent = '累计注册';
+
+  setKpi('kpiReport', 'kpiReportD', o.reportPending,
+    o.reportPending ? '含恶意差评' : '暂无待处理', o.reportPending > 0);
+
+  // ---- 侧边栏角标 ----
+  setBadge('navAuditBadge', o.shopPending);
+  setBadge('navReportBadge', o.reportPending);
+
+  // ---- 趋势柱状 ----
+  var data = o.trend;
+  var max = Math.max.apply(null, data.map(function (x) { return x.v; }).concat([1]));
+  document.getElementById('bars').innerHTML = data.map(function (x) {
+    var h = Math.max(x.v / max * 100, x.v > 0 ? 4 : 0);
+    return '<div class="bar-col">' +
+      '<div style="flex:1;display:flex;align-items:flex-end;width:100%;justify-content:center">' +
+        '<div class="bar" style="height:' + h + '%">' +
+          (x.v > 0 ? '<div class="bar__val">' + x.v + '</div>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="bar__label">' + x.d + '</div>' +
+    '</div>';
+  }).join('');
+
+  // ---- 热门店铺：只看真正在营的店，待审核/封禁的不该出现在榜单 ----
+  var hot = (MOCK.shops || [])
+    .filter(function (s) { return s.status === 'normal' || s.status === 'muted'; })
+    .sort(function (a, b) { return b.stats.views - a.stats.views; })
+    .slice(0, 6);
+
+  document.getElementById('hotShops').innerHTML = hot.length ? hot.map(function (s, i) {
+    return '<div class="rank-mini">' +
+      '<div class="rank-mini__no ' + (i < 3 ? 'rank-mini__no--top' : '') + '">' + (i + 1) + '</div>' +
+      '<div style="width:28px;height:28px;border-radius:7px;overflow:hidden;background:var(--bg-hover)">' +
+        '<img src="' + s.logo + '" style="width:100%;height:100%;object-fit:cover">' +
+      '</div>' +
+      '<div class="rank-mini__name">' + s.name + '</div>' +
+      '<div class="rank-mini__val">' + MOCK.fmtNum(s.stats.views) + ' 浏览</div>' +
+    '</div>';
+  }).join('') : '<div class="empty"><div class="empty__icon">🏪</div><div class="empty__text">暂无数据</div></div>';
+
+  // ---- 待办：数量为 0 的项不显示，避免列一堆"去处理"结果是空的 ----
+  var todos = [];
+  if (o.shopPending > 0) {
+    todos.push(todo('🏪', '#FFF7E6', '#D46B08',
+      o.shopPending + ' 家商家待审核',
+      (MOCK.pendingShops || []).slice(0, 2).map(function (s) { return s.name; }).join('、') || '查看审核队列',
+      'audit-shops.html', '去处理'));
+  }
+  if (o.reportPending > 0) {
+    todos.push(todo('⚠', '#FFF1F0', 'var(--danger)',
+      o.reportPending + ' 条举报待处理',
+      '来自 ' + uniqueReporter() + ' 的举报',
+      'contents.html', '去处理'));
+  }
+  var topPinned = (MOCK.shops || []).filter(function (s) { return s.pinned; });
+  if (topPinned.length) {
+    todos.push(todo('📌', '#E6F4FF', 'var(--info)',
+      '推荐排名待复核',
+      topPinned[0].name + ' 等 ' + topPinned.length + ' 家处于置顶',
+      'ranking.html', '去调整'));
+  }
+  if (o.shopMuted > 0) {
+    todos.push(todo('🔇', '#F5F5F5', 'var(--text-3)',
+      o.shopMuted + ' 家店铺处于禁言',
+      '禁言店铺不能发布和回评',
+      'shops.html', '去查看'));
+  }
+
+  document.getElementById('todos').innerHTML = todos.length ? todos.join('')
+    : '<div class="empty" style="padding:40px 0"><div class="empty__icon">✅</div>' +
+      '<div class="empty__text">没有待办事项</div>' +
+      '<div class="empty__hint">都处理完啦</div></div>';
 })();
+
+/* ---------- 数据源 ---------- */
+
+/**
+ * 平台端概览数据。
+ * 后端在线时直接用 /admin/overview 的权威数据；
+ * 纯本地假数据模式下用 MOCK 数组现算，保证原型照样能演示。
+ */
+function overview() {
+  var o = MOCK.overview;
+  var shops = MOCK.shops || [];
+  var dishes = MOCK.dishes || [];
+  var users = MOCK.users || [];
+  var reports = MOCK.reports || [];
+  var pending = MOCK.pendingShops || [];
+
+  if (o && o.shopCount != null) {
+    return {
+      shopCount: o.shopCount,
+      shopNormal: o.shopNormal,
+      shopMuted: o.shopMuted,
+      shopBanned: o.shopBanned,
+      shopPending: o.shopPending,
+      userCount: o.userCount,
+      dishToday: o.dishToday,
+      reportPending: o.reportPending,
+      trend: (o.trend && o.trend.length) ? o.trend : localTrend(dishes),
+      dishDeltaMsg: deltaMsg(o.trend)
+    };
+  }
+
+  var today = startOfDay(new Date());
+  var normal = shops.filter(function (s) { return s.status === 'normal'; });
+  var muted = shops.filter(function (s) { return s.status === 'muted'; });
+  var banned = shops.filter(function (s) { return s.status === 'banned'; });
+  var t = localTrend(dishes);
+
+  return {
+    shopCount: shops.length,
+    shopNormal: normal.length,
+    shopMuted: muted.length,
+    shopBanned: banned.length,
+    shopPending: pending.length,
+    userCount: users.length,
+    dishToday: dishes.filter(function (d) {
+      return new Date(String(d.publishedAt).replace(/-/g, '/')) >= today;
+    }).length,
+    reportPending: reports.filter(function (r) { return r.status === 'pending'; }).length,
+    trend: t,
+    dishDeltaMsg: deltaMsg(t)
+  };
+}
+
+/** 近 7 日发布趋势：按 publishedAt 归到日 */
+function localTrend(dishes) {
+  var wk = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  var out = [];
+  for (var i = 6; i >= 0; i--) {
+    var day = new Date();
+    day.setHours(0, 0, 0, 0);
+    day.setDate(day.getDate() - i);
+    var next = new Date(day.getTime() + 86400000);
+    var cnt = dishes.filter(function (d) {
+      var ts = new Date(String(d.publishedAt).replace(/-/g, '/'));
+      return ts >= day && ts < next;
+    }).length;
+    out.push({ d: i === 0 ? '今日' : wk[day.getDay()], v: cnt });
+  }
+  return out;
+}
+
+/** 今日 vs 昨日，给 KPI 副标题用 */
+function deltaMsg(trend) {
+  if (!trend || trend.length < 2) return '—';
+  var today = trend[trend.length - 1].v;
+  var yest = trend[trend.length - 2].v;
+  var diff = today - yest;
+  if (diff === 0) return '与昨日持平';
+  return (diff > 0 ? '↑ 较昨日 +' : '↓ 较昨日 ') + diff;
+}
+
+/* ---------- 小工具 ---------- */
+
+function startOfDay(d) { d.setHours(0, 0, 0, 0); return d; }
+
+function setKpi(numId, deltaId, value, msg, alert) {
+  document.getElementById(numId).textContent = value;
+  document.getElementById(deltaId).textContent = msg;
+}
+
+function setBadge(id, n) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = n;
+  el.style.display = n ? '' : 'none';
+}
+
+function uniqueReporter() {
+  var names = (MOCK.reports || []).filter(function (r) { return r.status === 'pending'; })
+    .map(function (r) { return r.reporter; });
+  var uniq = names.filter(function (n, i) { return names.indexOf(n) === i; });
+  return uniq.slice(0, 2).join('、') || '用户';
+}
+
+function todo(icon, bg, color, title, desc, href, btn) {
+  return '<div class="todo-item">' +
+    '<div class="todo-item__icon" style="background:' + bg + ';color:' + color + '">' + icon + '</div>' +
+    '<div class="todo-item__main">' +
+      '<div class="todo-item__title">' + title + '</div>' +
+      '<div class="todo-item__desc">' + desc + '</div>' +
+    '</div>' +
+    '<a class="btn btn--sm btn--outline" href="' + href + '">' + btn + '</a>' +
+  '</div>';
+}
 </script>
 </body>
 </html>

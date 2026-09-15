@@ -120,7 +120,7 @@
           <div class="page-head__desc">只审店铺资质，菜品内容不审核</div>
         </div>
         <div class="page-head__spacer"></div>
-        <select class="select" style="width:130px" id="statusSel" onchange="render()">
+        <select class="select" style="width:130px" id="statusSel">
           <option value="pending">待审核</option>
           <option value="approved">已通过</option>
           <option value="rejected">已驳回</option>
@@ -165,37 +165,34 @@
 <script>
 let status = 'pending';
 let current = null;
+let rejecting = null;
 
-// 审核记录（原型内存）
-const RECORDS = {
-  pending: [],
-  approved: [],
-  rejected: []
-};
-
+/*
+ * 数据源直接用 MOCK 上的三个数组。
+ *
+ * 适配层负责把它们跟后端对齐 —— 后端在线时填 /admin/bootstrap 的真实数据，
+ * 不在线时留 mock.js 里的本地演示数据，页面不需要区分两种模式。
+ * 所以这里不再自己维护一份 RECORDS 副本：副本一旦和后端不同步，
+ * 就会出现"审核通过了但刷新又回来了"这种诡异现象。
+ */
 (function init() {
-  RECORDS.pending = MOCK.pendingShops.map(s => ({ ...s }));
-
-  // 预置已通过/已驳回数据演示
-  RECORDS.approved = [
-    { ...MOCK.shops[0], submittedAt: '2026-09-10 14:20', reviewedAt: '2026-09-10 16:05', reviewer: '平台运营' },
-    { ...MOCK.shops[1], submittedAt: '2026-09-09 10:12', reviewedAt: '2026-09-09 11:30', reviewer: '平台运营' }
-  ];
-  RECORDS.rejected = [
-    {
-      id: 'p_r1', name: '无名小摊', logo: 'https://picsum.photos/seed/rej1/200/200',
-      cover: 'https://picsum.photos/seed/rejcover1/800/600',
-      address: '成都市某处', city: '成都市', district: '金牛区',
-      phone: '028-0000-0000', hours: '不定', cuisine: '小吃', intro: '',
-      submittedAt: '2026-09-08 09:00', reviewedAt: '2026-09-08 10:20',
-      reviewer: '平台运营', rejectReason: '门头图不清晰，无法辨认店铺招牌，且未填写详细地址'
-    }
-  ];
-
+  // 兜底：万一用的是旧版 mock.js，补上空数组，避免页面直接报错
+  MOCK.pendingShops = MOCK.pendingShops || [];
+  MOCK.approvedShops = MOCK.approvedShops || [];
+  MOCK.rejectedShops = MOCK.rejectedShops || [];
+  document.getElementById('statusSel').addEventListener('change', function (e) {
+    status = e.target.value;
+    current = null;
+    render();
+  });
   render();
 })();
 
-function getList() { return RECORDS[status]; }
+function getList() {
+  if (status === 'approved') return MOCK.approvedShops;
+  if (status === 'rejected') return MOCK.rejectedShops;
+  return MOCK.pendingShops;
+}
 
 function render() {
   const list = getList();
@@ -203,8 +200,10 @@ function render() {
 
   document.getElementById('listTitle').textContent = titleMap[status];
   document.getElementById('listCount').textContent = '共 ' + list.length + ' 家';
-  document.getElementById('badgeNum').textContent = RECORDS.pending.length;
-  document.getElementById('badgeNum').style.display = RECORDS.pending.length ? '' : 'none';
+
+  const badge = document.getElementById('badgeNum');
+  badge.textContent = MOCK.pendingShops.length;
+  badge.style.display = MOCK.pendingShops.length ? '' : 'none';
 
   const el = document.getElementById('pendingList');
   if (!list.length) {
@@ -225,7 +224,7 @@ function render() {
       <div style="flex:1;min-width:0">
         <div class="pi__name">${s.name}</div>
         <div class="pi__meta">${s.cuisine} · ${s.district}</div>
-        <div class="pi__meta">提交于 ${s.submittedAt}</div>
+        <div class="pi__meta">提交于 ${s.submittedAt || '—'}</div>
         ${status === 'rejected' && s.rejectReason
           ? `<div class="pi__time" style="color:var(--danger)">驳回：${s.rejectReason.slice(0,18)}…</div>`
           : ''}
@@ -244,7 +243,7 @@ function render() {
 }
 
 function selectShop(id) {
-  current = getList().find(s => s.id === id);
+  current = getList().find(s => s.id === id) || null;
   document.querySelectorAll('.pending-item').forEach(el => el.classList.remove('is-active'));
   render();
 }
@@ -300,14 +299,14 @@ function renderDetail(s) {
 
       <div class="info-item">
         <div class="info-item__k">提交时间</div>
-        <div class="info-item__v" style="color:var(--text-3);font-size:13px">${s.submittedAt}</div>
+        <div class="info-item__v" style="color:var(--text-3);font-size:13px">${s.submittedAt || '—'}</div>
       </div>
 
       ${s.reviewedAt ? `
       <div class="info-item">
         <div class="info-item__k">${s.rejectReason ? '驳回时间' : '通过时间'}</div>
         <div class="info-item__v" style="color:var(--text-3);font-size:13px">
-          ${s.reviewedAt} · ${s.reviewer}
+          ${s.reviewedAt} · ${s.reviewer || '平台运营'}
         </div>
       </div>` : ''}
 
@@ -330,36 +329,26 @@ function renderDetail(s) {
 }
 
 /* ---------- 审批 ---------- */
+/*
+ * 写操作统一走 MOCK.act：
+ *   后端在线 → 真正的审核接口落库，通过后客户端立刻能看到这家店
+ *   后端不在 → 直接改内存，原型照样能演示
+ * 两种模式下这段代码完全一样。
+ */
 function approve() {
   if (!current) return;
   if (!confirm(`确定通过「${current.name}」的入驻申请？通过后该店铺即可发布菜品。`)) return;
 
-  const s = current;
-  s.reviewedAt = now();
-  s.reviewer = '平台运营';
-
-  RECORDS.pending = RECORDS.pending.filter(x => x.id !== s.id);
-  RECORDS.approved.unshift(s);
-  MOCK.pendingShops = MOCK.pendingShops.filter(x => x.id !== s.id);
-
-  // 加入正式店铺列表
-  MOCK.shops.push({
-    id: s.id, name: s.name, logo: s.logo, cover: s.cover,
-    address: s.address, city: s.city, district: s.district,
-    lat: 30.65, lng: 104.06, distance: 2.5,
-    phone: s.phone, hours: s.hours, cuisine: s.cuisine,
-    intro: s.intro, status: 'normal', weight: 0, pinned: false,
-    canPostToday: true, lastPostAt: '', intervalHours: 24, dailyLimit: 1,
-    stats: { dishes: 0, views: 0, likes: 0, checkins: 0 }
-  });
+  const id = current.id, name = current.name;
+  const r = MOCK.act('audit.approve', { id: id, reviewer: '平台运营' });
+  if (!r.ok) { toast(r.msg || '操作失败，请重试'); return; }
 
   current = null;
   render();
-  toast(`已通过「${s.name}」，店铺已上线`);
-  track('admin_approve_shop', { shopId: s.id });
+  toast(`已通过「${name}」，店铺已上线`);
+  track('admin_approve_shop', { shopId: id });
 }
 
-let rejecting = null;
 function openReject() {
   rejecting = current;
   document.getElementById('rejectReason').value = '';
@@ -374,33 +363,18 @@ function doReject() {
   const reason = document.getElementById('rejectReason').value.trim();
   if (!reason) { toast('请填写驳回原因'); return; }
 
-  const s = rejecting;
-  s.reviewedAt = now();
-  s.reviewer = '平台运营';
-  s.rejectReason = reason;
+  const s = rejecting || current;
+  if (!s) return;
 
-  RECORDS.pending = RECORDS.pending.filter(x => x.id !== s.id);
-  RECORDS.rejected.unshift(s);
-  MOCK.pendingShops = MOCK.pendingShops.filter(x => x.id !== s.id);
+  const r = MOCK.act('audit.reject', { id: s.id, reason: reason, reviewer: '平台运营' });
+  if (!r.ok) { toast(r.msg || '操作失败，请重试'); return; }
 
   closeReject();
   current = null;
   render();
   toast(`已驳回「${s.name}」`);
-  track('admin_reject_shop', { shopId: s.id, reason });
+  track('admin_reject_shop', { shopId: s.id, reason: reason });
 }
-
-function now() {
-  const d = new Date();
-  const p = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-document.getElementById('statusSel').addEventListener('change', e => {
-  status = e.target.value;
-  current = null;
-  render();
-});
 
 let toastTimer;
 function toast(msg) {

@@ -248,22 +248,27 @@ function delTier(i) {
   renderTiers();
 }
 
+/*
+ * 保存价格档。
+ *
+ * 这是「商家只填价格、系统自动归档」的兑现点 ——
+ * 档位一变，所有菜品的档位必须跟着重算，否则会留下一批
+ * 指向已删除档位的脏数据（客户端筛选会因此永远筛不到这些菜）。
+ * 后端在线时由服务端重算并回传新菜品列表，这里只负责替换。
+ */
 function saveTiers() {
   const invalid = tiers.find(t => t.min >= t.max);
   if (invalid) { toast(`「${invalid.name}」的区间不合法`); return; }
+  if (!tiers.length) { toast('至少保留一个档位'); return; }
 
-  MOCK.priceTiers = tiers.map(t => ({ ...t }));
+  const r = MOCK.act('config.priceTiers', { tiers: tiers.map(t => ({ ...t })) });
+  if (!r.ok) { toast(r.msg || '保存失败，请重试'); return; }
 
-  // 重算所有菜品的档位
-  MOCK.dishes.forEach(d => {
-    if (d.price != null) {
-      const t = MOCK.getTierByPrice(d.price);
-      d.priceTierId = t ? t.id : null;
-    }
-  });
-
+  // 保存后以内存里的权威值为准刷新编辑区（档位 id 可能被服务端规整过）
+  tiers = (MOCK.priceTiers || []).map(t => ({ ...t }));
+  renderTiers();
   toast('价格档已保存，菜品已重新归档');
-  track('admin_save_tiers', { tiers });
+  track('admin_save_tiers', { tiers: tiers });
 }
 
 /* ---------- 口味标签 ---------- */
@@ -308,9 +313,12 @@ function delTag(i) {
 }
 
 function saveTags() {
-  MOCK.tasteTags = [...tags];
+  const r = MOCK.act('config.tasteTags', { tags: [...tags] });
+  if (!r.ok) { toast(r.msg || '保存失败，请重试'); return; }
+  tags = [...(MOCK.tasteTags || [])];
+  renderTags();
   toast('口味标签已保存');
-  track('admin_save_tags', { tags });
+  track('admin_save_tags', { tags: tags });
 }
 
 /* ---------- 菜系 ---------- */
@@ -340,8 +348,12 @@ function delCuisine(i) {
 }
 
 function saveCuisines() {
-  MOCK.cuisines = [...cuisines];
+  const r = MOCK.act('config.cuisines', { cuisines: [...cuisines] });
+  if (!r.ok) { toast(r.msg || '保存失败，请重试'); return; }
+  cuisines = [...(MOCK.cuisines || [])];
+  renderCuisines();
   toast('菜系分类已保存');
+  track('admin_save_cuisines', { cuisines: cuisines });
 }
 
 let toastTimer;

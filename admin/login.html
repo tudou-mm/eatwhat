@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>平台登录 · 吃什么</title>
+<link rel="stylesheet" href="../assets/css/base.css">
+<style>
+  body {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(160deg, #1B1B1F 0%, #2A1A22 60%, #3A1620 100%);
+  }
+
+  .login-wrap { width: 100%; max-width: 400px; padding: 24px; }
+
+  .brand { text-align: center; margin-bottom: 28px; }
+  .brand__dot {
+    width: 46px; height: 46px; border-radius: 13px; margin: 0 auto 14px;
+    background: var(--brand); position: relative;
+  }
+  .brand__dot::after {
+    content: ''; position: absolute; left: 9px; top: 9px; width: 28px; height: 28px;
+    border-radius: 9px; background: var(--brand-2);
+    clip-path: polygon(0 0, 100% 0, 100% 100%);
+    opacity: .85;
+  }
+  .brand__name { font-size: 20px; font-weight: 600; color: #fff; margin-bottom: 6px; }
+  .brand__sub { font-size: 13px; color: rgba(255,255,255,.5); }
+
+  .login-card {
+    background: #fff; border-radius: var(--radius-lg); padding: 28px;
+  }
+
+  .field { margin-bottom: 16px; }
+  .field__label { font-size: 13px; color: var(--text-2); margin-bottom: 7px; }
+  .field .input { width: 100%; height: 40px; }
+
+  .login-btn {
+    width: 100%; height: 42px; border: none; border-radius: var(--radius);
+    background: var(--brand); color: #fff; font-size: 15px; font-weight: 500;
+    cursor: pointer; margin-top: 6px; transition: opacity .15s;
+  }
+  .login-btn:hover { opacity: .9; }
+
+  .err {
+    font-size: 12px; color: var(--danger); margin-top: 10px;
+    min-height: 16px; text-align: center;
+  }
+
+  .hint {
+    margin-top: 18px; padding: 12px 14px; border-radius: var(--radius);
+    background: var(--bg-hover); font-size: 12px; color: var(--text-3); line-height: 1.7;
+  }
+  .hint b { color: var(--text-1); font-weight: 500; }
+
+  .back {
+    display: block; text-align: center; margin-top: 20px;
+    font-size: 13px; color: rgba(255,255,255,.5); text-decoration: none;
+  }
+  .back:hover { color: rgba(255,255,255,.8); }
+
+  .mode {
+    text-align: center; margin-top: 14px; font-size: 12px;
+    color: rgba(255,255,255,.35);
+  }
+</style>
+</head>
+<body>
+
+<div class="login-wrap">
+  <div class="brand">
+    <div class="brand__dot"></div>
+    <div class="brand__name">吃什么 · 平台运营端</div>
+    <div class="brand__sub">店铺审核 · 内容治理 · 推荐配置</div>
+  </div>
+
+  <div class="login-card">
+    <div class="field">
+      <div class="field__label">运营账号</div>
+      <input class="input" id="account" placeholder="请输入运营账号" autocomplete="username">
+    </div>
+
+    <div class="field">
+      <div class="field__label">密码</div>
+      <input class="input" id="password" type="password" placeholder="请输入密码"
+             autocomplete="current-password">
+    </div>
+
+    <button class="login-btn" id="submit">登录</button>
+    <div class="err" id="err"></div>
+
+    <div class="hint">
+      <b>演示账号</b>：admin ／ admin123<br>
+      当前为原型演示，登录只做前端校验，尚未接入真实鉴权。
+    </div>
+  </div>
+
+  <a class="back" href="../index.html">← 返回总览</a>
+  <div class="mode" id="mode"></div>
+</div>
+
+<script>
+/*
+ * 平台端独立入口。
+ * 跳转时必须把 ?api=1 带上，否则登录进去会掉回本地假数据模式 ——
+ * 运营看到的数据和刚才测试的不是一套，会很迷惑。
+ */
+(function () {
+  var qs = new URLSearchParams(location.search);
+  var api = qs.get('api');
+  var modeEl = document.getElementById('mode');
+
+  // 沿用地址栏参数，或沿用上次的开关
+  var useApi = api === '1' || (api !== '0' && localStorage.getItem('useApi') === '1');
+  modeEl.textContent = useApi ? '当前模式：连接后端（api=1）' : '当前模式：本地假数据（加 ?api=1 切后端）';
+
+  var account = document.getElementById('account');
+  var password = document.getElementById('password');
+  var err = document.getElementById('err');
+
+  function submit() {
+    var a = account.value.trim();
+    var p = password.value.trim();
+    err.textContent = '';
+
+    if (!a || !p) { err.textContent = '请输入账号和密码'; return; }
+    if (a !== 'admin' || p !== 'admin123') { err.textContent = '账号或密码不正确'; return; }
+
+    var url = 'dashboard.html' + (useApi ? '?api=1' : '');
+    location.href = url;
+  }
+
+  document.getElementById('submit').addEventListener('click', submit);
+  [account, password].forEach(function (el) {
+    el.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') submit();
+    });
+  });
+  account.focus();
+})();
+</script>
+</body>
+</html>

@@ -721,5 +721,54 @@ const MOCK = {
   }
 };
 
+/* ==========================================================
+   平台端专用数据
+   ----------------------------------------------------------
+   后端在线时，这些数组由 /admin/bootstrap 填成真实数据；
+   这里给的是本地演示数据，保证不接后端也能把平台端看全。
+   ========================================================== */
+
+/* 已通过审核的商家：从已有店铺派生，避免重复维护同一份店铺信息 */
+MOCK.approvedShops = MOCK.shops.slice(0, 3).map((s, i) => ({
+  ...s,
+  submittedAt: '2026-09-0' + (9 - i) + ' 1' + i + ':20',
+  reviewedAt: '2026-09-0' + (9 - i) + ' 1' + (i + 2) + ':05',
+  reviewer: '平台运营'
+}));
+
+/* 已驳回的商家：没有上线，所以没有距离、权重和统计数据 */
+MOCK.rejectedShops = [
+  {
+    id: 'p_r1',
+    name: '无名小摊',
+    logo: 'https://picsum.photos/seed/rej1/200/200',
+    cover: 'https://picsum.photos/seed/rejcover1/800/600',
+    address: '成都市某处',
+    city: '成都市',
+    district: '金牛区',
+    phone: '028-0000-0000',
+    hours: '不定',
+    cuisine: '小吃',
+    intro: '',
+    status: 'rejected',
+    submittedAt: '2026-09-08 09:00',
+    reviewedAt: '2026-09-08 10:20',
+    reviewer: '平台运营',
+    rejectReason: '门头图不清晰，无法辨认店铺招牌，且未填写详细地址',
+    distance: 0, weight: 0, pinned: false, canPostToday: false,
+    intervalHours: 24, dailyLimit: 1, lastPostAt: '',
+    stats: { dishes: 0, views: 0, likes: 0, favorites: 0, comments: 0, checkins: 0 }
+  }
+];
+
+/* 已下架内容：后端在线时由 /admin/bootstrap 填充 */
+MOCK.removedDishes = [];
+
+/* 全局默认发布规则（平台端「发布规则」页） */
+MOCK.publishRule = { intervalHours: 24, dailyLimit: 1 };
+
+/* 数据概览（后端在线时由 /admin/bootstrap 填充，这里留空由页面现算） */
+MOCK.overview = null;
+
 /* 暴露到全局 */
 window.MOCK = MOCK;

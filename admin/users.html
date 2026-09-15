@@ -158,7 +158,8 @@
           </label>
         </div>
 
-        <table class="table">
+        <div class="table-scroll">
+          <table class="table">
           <thead>
             <tr>
               <th>用户</th>
@@ -171,6 +172,7 @@
           </thead>
           <tbody id="body"></tbody>
         </table>
+        </div>
       </div>
 
     </div>
@@ -274,7 +276,11 @@ function setStatus(id, st) {
   if (!confirm(tips[st])) return;
 
   const names = { normal: '已解除限制', warned: '已警告', banned: '已封禁' };
-  u.status = st;
+
+  // 写操作走后端，封号后该用户的评论/点赞会在客户端立刻失效
+  const r = MOCK.act('user.status', { id: id, status: st });
+  if (!r.ok) { toast(r.msg || '操作失败，请重试'); return; }
+
   render();
   if (current && current.id === id) openDetail(id);
   toast(`${names[st]}：${u.name}`);

@@ -464,6 +464,15 @@ table { border-collapse: collapse; width: 100%; }
 .table tbody tr:hover { background: #FAFAFB; }
 .table tbody tr:last-child td { border-bottom: none; }
 
+/* 宽表格：列多时横向滚动。
+   不加这层，窄屏下浏览器会把「店铺」这类未定宽的列压到一列一字竖排。 */
+.table-scroll { overflow-x: auto; }
+.table-scroll > .table { min-width: 860px; }
+/* 首列名称不可再被压缩（各页 .shop-cell/.dish-cell/.u-cell 内部文字区） */
+.shop-cell > div:last-child,
+.dish-cell > div:last-child,
+.u-cell > div:last-child { min-width: 120px; }
+
 /* 拖拽手柄 */
 .drag-handle {
   cursor: grab;

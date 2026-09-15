@@ -94,7 +94,7 @@
     <div class="sidebar__logo"><div class="sidebar__logo-dot"></div><span>吃什么 · 平台</span></div>
     <nav class="sidebar__nav">
       <a class="nav-item" href="dashboard.html">数据概览</a>
-      <a class="nav-item" href="audit-shops.html">商家审核 <span class="nav-item__badge">2</span></a>
+      <a class="nav-item" href="audit-shops.html">商家审核 <span class="nav-item__badge" id="auditBadge"></span></a>
       <a class="nav-item" href="shops.html">店铺管理</a>
       <a class="nav-item is-active" href="contents.html">内容管理</a>
       <a class="nav-item" href="ranking.html">推荐排名</a>
@@ -142,7 +142,8 @@
             <option value="none">未打标</option>
           </select>
         </div>
-        <table class="table">
+        <div class="table-scroll">
+          <table class="table">
           <thead>
             <tr>
               <th>菜品</th>
@@ -156,6 +157,7 @@
           </thead>
           <tbody id="dishBody"></tbody>
         </table>
+        </div>
       </div>
 
       <!-- 举报处理 -->
@@ -193,9 +195,18 @@ let tab = 'dishes';
 let tagging = null;
 let tagPick = null;
 
-const REMOVED = [];
-
+/*
+ * 「已下架」直接读 MOCK.removedDishes。
+ * 适配层在后端在线时会把它填成真实的 removed 列表，
+ * 页面不再自己维护一份副本 —— 副本不同步就会出现
+ * "下架了但刷新后又回到列表里"。
+ */
 (function init() {
+  MOCK.removedDishes = MOCK.removedDishes || [];
+  var badge = document.getElementById('auditBadge');
+  var n = (MOCK.pendingShops || []).length;
+  badge.textContent = n;
+  badge.style.display = n ? '' : 'none';
   render();
 })();
 
@@ -208,9 +219,10 @@ function switchTab(t, el) {
 }
 
 function render() {
-  document.getElementById('nDish').textContent = MOCK.dishes.length;
-  document.getElementById('nRemoved').textContent = REMOVED.length;
-  document.getElementById('nReport').textContent = MOCK.reports.filter(r => r.status === 'pending').length;
+  document.getElementById('nDish').textContent = (MOCK.dishes || []).length;
+  document.getElementById('nRemoved').textContent = (MOCK.removedDishes || []).length;
+  document.getElementById('nReport').textContent =
+    (MOCK.reports || []).filter(r => r.status === 'pending').length;
 
   if (tab === 'reports') renderReports();
   else renderDishes();
@@ -221,7 +233,7 @@ function renderDishes() {
   const kw = document.getElementById('kw').value.trim();
   const ft = document.getElementById('ftTag').value;
 
-  const base = tab === 'removed' ? REMOVED : MOCK.dishes;
+  const base = tab === 'removed' ? (MOCK.removedDishes || []) : (MOCK.dishes || []);
   let list = base.filter(d => {
     if (kw && !d.name.includes(kw) && !d.shopName.includes(kw)) return false;
     if (ft === 'none') return !d.realTag;
@@ -239,13 +251,13 @@ function renderDishes() {
   }
 
   body.innerHTML = list.map(d => {
-    const tier = MOCK.priceTiers.find(t => t.id === d.priceTierId);
+    const tier = (MOCK.priceTiers || []).find(t => t.id === d.priceTierId);
     return `
     <tr>
       <td>
         <div class="dish-cell">
           <div class="dish-cell__img">
-            <img src="${d.cover || d.media[0]}">
+            <img src="${d.cover || (d.media && d.media[0]) || ''}">
             ${d.type === 'video' ? '<div class="dish-cell__badge">▶</div>' : ''}
           </div>
           <div style="min-width:0">
@@ -283,7 +295,7 @@ function renderDishes() {
 
 /* ---------- 举报 ---------- */
 function renderReports() {
-  const list = MOCK.reports.filter(r => r.status === 'pending');
+  const list = (MOCK.reports || []).filter(r => r.status === 'pending');
   const el = document.getElementById('reportBody');
 
   if (!list.length) {
@@ -311,28 +323,32 @@ function renderReports() {
   `).join('');
 }
 
+/*
+ * 举报处理与内容下架统一走 MOCK.act：
+ *   后端在线 → 真落库，"确认违规"会连带把菜品下架、评论隐藏
+ *   后端不在 → 改内存，原型照样能演示
+ */
 function acceptReport(id) {
-  const r = MOCK.reports.find(x => x.id === id);
+  const r = (MOCK.reports || []).find(x => x.id === id);
+  if (!r) return;
   if (!confirm(`确认「${r.targetName}」违规？\n\n菜品将被下架，评论将被隐藏。`)) return;
 
-  if (r.type === 'dish') {
-    const d = MOCK.getDish(r.targetId);
-    if (d) { d.status = 'removed'; REMOVED.push(d); MOCK.dishes.splice(MOCK.dishes.indexOf(d), 1); }
-  } else {
-    const c = MOCK.comments.find(x => x.id === r.targetId);
-    if (c) MOCK.comments.splice(MOCK.comments.indexOf(c), 1);
-  }
+  const res = MOCK.act('report.handle', { id: id, action: 'confirmed' });
+  if (!res.ok) { toast(res.msg || '操作失败，请重试'); return; }
 
-  r.status = 'done';
   render();
   toast('已确认违规并处理');
   track('admin_report_accept', { reportId: id });
 }
 
 function rejectReport(id) {
-  const r = MOCK.reports.find(x => x.id === id);
+  const r = (MOCK.reports || []).find(x => x.id === id);
+  if (!r) return;
   if (!confirm(`驳回「${r.targetName}」的举报？`)) return;
-  r.status = 'rejected';
+
+  const res = MOCK.act('report.handle', { id: id, action: 'rejected' });
+  if (!res.ok) { toast(res.msg || '操作失败，请重试'); return; }
+
   render();
   toast('已驳回该举报');
   track('admin_report_reject', { reportId: id });
@@ -341,23 +357,27 @@ function rejectReport(id) {
 /* ---------- 下架 / 恢复 ---------- */
 function removeDish(id) {
   const d = MOCK.getDish(id);
+  if (!d) return;
   if (!confirm(`确定下架「${d.name}」？下架后客户端不再展示。`)) return;
-  d.status = 'removed';
-  REMOVED.push(d);
-  MOCK.dishes.splice(MOCK.dishes.indexOf(d), 1);
+
+  const r = MOCK.act('dish.status', { id: id, status: 'removed' });
+  if (!r.ok) { toast(r.msg || '操作失败，请重试'); return; }
+
   render();
   toast('已下架，可在「已下架」中恢复');
   track('admin_remove_dish', { dishId: id });
 }
 
 function restore(id) {
-  const d = REMOVED.find(x => x.id === id);
+  const d = (MOCK.removedDishes || []).find(x => x.id === id);
   if (!d) return;
-  d.status = 'normal';
-  MOCK.dishes.push(d);
-  REMOVED.splice(REMOVED.indexOf(d), 1);
+
+  const r = MOCK.act('dish.status', { id: id, status: 'normal' });
+  if (!r.ok) { toast(r.msg || '操作失败，请重试'); return; }
+
   render();
   toast('已恢复展示');
+  track('admin_restore_dish', { dishId: id });
 }
 
 function viewFront(id) {
@@ -367,6 +387,7 @@ function viewFront(id) {
 /* ---------- 打标签 ---------- */
 function openTag(id) {
   tagging = MOCK.getDish(id);
+  if (!tagging) return;
   tagPick = tagging.realTag || null;
   document.getElementById('tagDishName').textContent = tagging.name + ' · ' + tagging.shopName;
   renderTagOpts();
@@ -404,11 +425,15 @@ function closeTag() {
 
 function saveTag() {
   if (!tagging) return;
-  tagging.realTag = tagPick;
+  const id = tagging.id;
+
+  const r = MOCK.act('dish.realTag', { id: id, realTag: tagPick });
+  if (!r.ok) { toast(r.msg || '保存失败，请重试'); return; }
+
   closeTag();
   render();
   toast('标签已更新');
-  track('admin_tag_dish', { dishId: tagging?.id, tag: tagPick });
+  track('admin_tag_dish', { dishId: id, tag: tagPick });
 }
 
 document.querySelectorAll('.modal-mask').forEach(m => {

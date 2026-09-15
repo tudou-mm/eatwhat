@@ -1,6 +1,7 @@
 package com.eatwhat.controller;
 
 import com.eatwhat.common.R;
+import com.eatwhat.common.Views;
 import com.eatwhat.entity.Dish;
 import com.eatwhat.entity.Shop;
 import com.eatwhat.service.*;
@@ -11,6 +12,10 @@ import java.util.*;
 /**
  * 客户端接口（食客侧）。
  * 免登录可浏览；评论、打卡需带 userId。
+ *
+ * 出参一律过 {@link Views}，不直接返回实体 ——
+ * 前端读的是嵌套结构（stats.views），实体是扁平字段（statViews），
+ * 直接返回实体页面只会静默显示空白。
  */
 @RestController
 @RequestMapping("/api/client")
@@ -21,15 +26,17 @@ public class ClientController {
     private final CommentService commentService;
     private final RankService rankService;
     private final ConfigService configService;
+    private final Views views;
 
     public ClientController(ShopService shopService, DishService dishService,
                             CommentService commentService, RankService rankService,
-                            ConfigService configService) {
+                            ConfigService configService, Views views) {
         this.shopService = shopService;
         this.dishService = dishService;
         this.commentService = commentService;
         this.rankService = rankService;
         this.configService = configService;
+        this.views = views;
     }
 
     /**
@@ -40,26 +47,13 @@ public class ClientController {
      * 分散拉取要走 1(店铺)+1(配置)+N(各店菜品)+M(各菜评论) 次请求，
      * 店铺一多就会明显卡首屏。聚合成 1 次请求，首屏稳定。
      * 顺带修正语义 —— 适配层原先调的是平台端的 /admin/shops。
-     *
-     * 注意：这里必须用 shopView / dishView 转换，
-     * 不能用原始实体 —— 前端读的是 stats.xxx 嵌套结构，
-     * 实体是扁平的 statXxx 字段，直接返回页面会取不到值。
      */
     @GetMapping("/bootstrap")
     public R<Map<String, Object>> bootstrap() {
         Map<String, Object> m = new LinkedHashMap<>();
-
-        List<Map<String, Object>> shops = new ArrayList<>();
-        for (Shop s : shopService.listVisible()) shops.add(shopView(s));
-        m.put("shops", shops);
-
-        List<Map<String, Object>> dishes = new ArrayList<>();
-        for (Dish d : dishService.listByStatus("normal")) dishes.add(dishView(d));
-        m.put("dishes", dishes);
-
-        List<Map<String, Object>> comments = new ArrayList<>();
-        for (com.eatwhat.entity.Comment c : commentService.listAll()) comments.add(commentView(c));
-        m.put("comments", comments);
+        m.put("shops", views.shops(shopService.listVisible()));
+        m.put("dishes", views.dishes(dishService.listByStatus("normal")));
+        m.put("comments", views.comments(commentService.listAll()));
 
         Map<String, Object> cfg = new LinkedHashMap<>();
         cfg.put("priceTiers", configService.priceTiers());
@@ -130,38 +124,34 @@ public class ClientController {
             }
         }
 
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (Dish d : feed) out.add(dishView(d));
-        return R.ok(out);
+        return R.ok(views.dishes(feed));
     }
 
     /** 店铺详情 */
     @GetMapping("/shop/{id}")
     public R<Map<String, Object>> shop(@PathVariable String id) {
         Shop s = shopService.get(id);
-        Map<String, Object> m = shopView(s);
-        m.put("dishes", dishService.listByShop(id).stream().map(this::dishView).toList());
+        Map<String, Object> m = views.shop(s);
+        m.put("dishes", dishService.listByShop(id).stream().map(views::dish).toList());
         return R.ok(m);
     }
 
     /** 某店铺的全部菜品（适配层预加载用） */
     @GetMapping("/shop/{id}/dishes")
     public R<List<Map<String, Object>>> shopDishes(@PathVariable String id) {
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (Dish d : dishService.listByShop(id)) out.add(dishView(d));
-        return R.ok(out);
+        return R.ok(views.dishes(dishService.listByShop(id)));
     }
 
     /** 菜品详情 */
     @GetMapping("/dish/{id}")
     public R<Map<String, Object>> dish(@PathVariable String id) {
-        return R.ok(dishView(dishService.get(id)));
+        return R.ok(views.dish(dishService.get(id)));
     }
 
     /** 菜品评论列表 */
     @GetMapping("/dish/{id}/comments")
     public R<List<Map<String, Object>>> comments(@PathVariable String id) {
-        return R.ok(commentService.listByDish(id).stream().map(this::commentView).toList());
+        return R.ok(commentService.listByDish(id).stream().map(views::comment).toList());
     }
 
     /** 发表评论 */
@@ -170,7 +160,7 @@ public class ClientController {
                                              @RequestBody Map<String, Object> body) {
         String userId = String.valueOf(body.get("userId"));
         String content = body.get("content") == null ? "" : body.get("content").toString();
-        return R.ok(commentView(commentService.add(id, userId, content)));
+        return R.ok(views.comment(commentService.add(id, userId, content)));
     }
 
     /** 点赞 / 收藏 / 打卡 */
@@ -199,11 +189,11 @@ public class ClientController {
         @SuppressWarnings("unchecked")
         List<String> tastes = (List<String>) body.getOrDefault("tastes", new ArrayList<>());
 
-        List<Map<String, Object>> out = new ArrayList<>();
+        List<Dish> hit = new ArrayList<>();
         for (Dish d : dishService.listNormal()) {
-            if (matchFilter(d, tiers, tastes)) out.add(dishView(d));
+            if (matchFilter(d, tiers, tastes)) hit.add(d);
         }
-        return R.ok(out);
+        return R.ok(views.dishes(hit));
     }
 
     /** 客户端基础配置：价格档 + 口味标签（前端筛选页要用） */
@@ -215,107 +205,7 @@ public class ClientController {
         return R.ok(m);
     }
 
-    // ==================== 视图转换 ====================
-
-    private Map<String, Object> dishView(Dish d) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("id", d.getId());
-        m.put("shopId", d.getShopId());
-        m.put("shopName", d.getShopName());
-        m.put("name", d.getName());
-        m.put("desc", d.getDescr());
-        m.put("type", d.getType());
-        m.put("media", jsonList(d.getMedia()));
-        m.put("cover", d.getCover());
-        m.put("price", d.getPrice());
-        m.put("priceTierId", d.getPriceTierId());
-        m.put("realTag", d.getRealTag());
-        m.put("tasteTags", jsonList(d.getTasteTags()));
-        m.put("publishedAt", d.getPublishedAt());
-        m.put("status", d.getStatus());
-        m.put("decay", rankService.timeDecay(d.getPublishedTs()));
-        Map<String, Object> stats = new LinkedHashMap<>();
-        stats.put("views", d.getStatViews());
-        stats.put("likes", d.getStatLikes());
-        stats.put("favorites", d.getStatFavorites());
-        stats.put("comments", d.getStatComments());
-        stats.put("checkins", d.getStatCheckins());
-        m.put("stats", stats);
-        return m;
-    }
-
-    private Map<String, Object> shopView(Shop s) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("id", s.getId());
-        m.put("name", s.getName());
-        m.put("cuisine", s.getCuisine());
-        m.put("city", s.getCity());
-        m.put("district", s.getDistrict());
-        m.put("address", s.getAddress());
-        m.put("phone", s.getPhone());
-        m.put("hours", s.getHours());
-        m.put("intro", s.getIntro());
-        m.put("cover", s.getCover());
-        m.put("logo", s.getLogo());
-        m.put("lat", s.getLat());
-        m.put("lng", s.getLng());
-        m.put("distance", s.getDistance());
-        m.put("status", s.getStatus());
-        m.put("pinned", s.getPinned());
-        m.put("weight", s.getWeight());
-        m.put("intervalHours", s.getIntervalHours());
-        m.put("dailyLimit", s.getDailyLimit());
-        m.put("canPostToday", s.getCanPostToday());
-        Map<String, Object> stats = new LinkedHashMap<>();
-        stats.put("dishes", dishService.listByShop(s.getId()).size());
-        stats.put("views", s.getStatViews());
-        stats.put("likes", s.getStatLikes());
-        stats.put("favorites", s.getStatFavorites());
-        stats.put("comments", s.getStatComments());
-        stats.put("checkins", s.getStatCheckins());
-        m.put("stats", stats);
-        // 前端读的是格式化好的时间字符串（mock 里就是 'yyyy-MM-dd HH:mm'）
-        m.put("lastPostAt", fmtTs(s.getLastPublishAt()));
-        return m;
-    }
-
-    /** 时间戳 → 'yyyy-MM-dd HH:mm'，与前端 mock 的格式保持一致 */
-    private String fmtTs(Long ts) {
-        if (ts == null) return "";
-        return java.time.LocalDateTime
-                .ofInstant(java.time.Instant.ofEpochMilli(ts), java.time.ZoneId.of("Asia/Shanghai"))
-                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
-    }
-
-    private Map<String, Object> commentView(com.eatwhat.entity.Comment c) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("id", c.getId());
-        m.put("dishId", c.getDishId());
-        m.put("userId", c.getUserId());
-        m.put("userName", c.getUserName());
-        m.put("avatar", c.getAvatar());
-        m.put("content", c.getContent());
-        m.put("at", c.getAt());
-        if (c.getReplyContent() != null) {
-            Map<String, Object> r = new LinkedHashMap<>();
-            r.put("content", c.getReplyContent());
-            r.put("at", c.getReplyAt());
-            m.put("reply", r);
-        } else {
-            m.put("reply", null);
-        }
-        return m;
-    }
-
-    private List<String> jsonList(String s) {
-        try {
-            if (s == null || s.isBlank()) return new ArrayList<>();
-            return new com.fasterxml.jackson.databind.ObjectMapper()
-                    .readValue(s, new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
-        } catch (Exception e) { return new ArrayList<>(); }
-    }
-
-    private List<String> tasteList(Dish d) { return jsonList(d.getTasteTags()); }
+    // ==================== 筛选条件 ====================
 
     /**
      * 单条菜品是否命中筛选条件。
@@ -325,7 +215,7 @@ public class ClientController {
      */
     private boolean matchFilter(Dish d, List<String> tiers, List<String> tastes) {
         boolean tierOk = tiers == null || tiers.isEmpty() || tiers.contains(d.getPriceTierId());
-        boolean tasteOk = tastes == null || tastes.isEmpty() || hasAny(tasteList(d), tastes);
+        boolean tasteOk = tastes == null || tastes.isEmpty() || hasAny(Views.strList(d.getTasteTags()), tastes);
         return tierOk && tasteOk;
     }
 

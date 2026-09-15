@@ -121,7 +121,8 @@
                  id="searchInput" oninput="render()">
         </div>
 
-        <table class="table">
+        <div class="table-scroll">
+          <table class="table">
           <thead>
             <tr>
               <th>店铺</th>
@@ -134,6 +135,7 @@
           </thead>
           <tbody id="ruleBody"></tbody>
         </table>
+        </div>
       </div>
 
     </div>
@@ -143,11 +145,20 @@
 <script src="../assets/data/mock.js"></script>
 <script src="../assets/js/api.js"></script>
 <script>
-const GLOBAL = { interval: 24, limit: 1 };
+/*
+ * 全局默认发布规则。
+ * 它决定「自定义」标记的比较基准，所以不能写死在代码里 ——
+ * 后端在线时读平台配置，不在线时用本地演示值。
+ */
+const GLOBAL = {
+  interval: (MOCK.publishRule && MOCK.publishRule.intervalHours) || 24,
+  limit: (MOCK.publishRule && MOCK.publishRule.dailyLimit) || 1
+};
 
 function render() {
   const kw = document.getElementById('searchInput').value.trim();
-  let list = MOCK.shops;
+  // 待审核 / 已驳回的店还没上线，没有发布规则可配，不出现在这张表里
+  let list = MOCK.shops.filter(s => s.status === 'normal' || s.status === 'muted');
   if (kw) list = list.filter(s => s.name.includes(kw));
 
   const body = document.getElementById('ruleBody');
@@ -201,28 +212,61 @@ function render() {
   }).join('');
 }
 
+/*
+ * 单店规则覆盖统一走 MOCK.act：
+ *   后端在线 → 真落库，客户端/商家端的发布限制立刻按新规则走
+ *   后端不在 → 改内存，原型照样能演示
+ *
+ * 规则变更不影响已发记录，从下次发布算起 —— 这是冻结规则，
+ * 所以这里只改配置值，不动 lastPostAt。
+ */
 function setRule(id, key, val) {
   const s = MOCK.getShop(id);
+  if (!s) return;
   const v = Number(val);
   if (!v || v < 1) { toast('请输入大于 0 的数值'); render(); return; }
-  s[key] = v;
+
+  const payload = { id: id };
+  payload[key] = v;
+
+  const r = MOCK.act('shop.rule', payload);
+  if (!r.ok) { toast(r.msg || '保存失败，请重试'); render(); return; }
+
   toast(`「${s.name}」规则已更新，从下次发布生效`);
   render();
+  track('admin_shop_rule', { shopId: id, key: key, value: v });
 }
 
 function resetShop(id) {
   const s = MOCK.getShop(id);
-  s.intervalHours = GLOBAL.interval;
-  s.dailyLimit = GLOBAL.limit;
+  if (!s) return;
+
+  const r = MOCK.act('shop.rule', {
+    id: id, intervalHours: GLOBAL.interval, dailyLimit: GLOBAL.limit
+  });
+  if (!r.ok) { toast(r.msg || '保存失败，请重试'); return; }
+
   toast(`「${s.name}」已恢复全局默认`);
   render();
 }
 
+/*
+ * 全局默认发布规则。
+ * 它决定"新店铺的初始值"，也是上面「自定义」标记的比较基准 ——
+ * 所以必须存到平台配置里，不能只放在页面内存中，否则刷新就丢。
+ */
 function saveGlobal() {
-  GLOBAL.interval = Number(document.getElementById('gInterval').value) || 24;
-  GLOBAL.limit = Number(document.getElementById('gLimit').value) || 1;
-  toast(`全局默认已保存：${GLOBAL.interval} 小时 / ${GLOBAL.limit} 条`);
+  const iv = Number(document.getElementById('gInterval').value) || 24;
+  const lm = Number(document.getElementById('gLimit').value) || 1;
+
+  const r = MOCK.act('config.publishRule', { intervalHours: iv, dailyLimit: lm });
+  if (!r.ok) { toast(r.msg || '保存失败，请重试'); return; }
+
+  GLOBAL.interval = iv;
+  GLOBAL.limit = lm;
+  toast(`全局默认已保存：${iv} 小时 / ${lm} 条`);
   render();
+  track('admin_save_global_rule', { intervalHours: iv, dailyLimit: lm });
 }
 
 let toastTimer;

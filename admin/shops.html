@@ -27,9 +27,13 @@
   .status-dot--normal::before { background: var(--success); }
   .status-dot--muted::before { background: var(--warning); }
   .status-dot--banned::before { background: var(--danger); }
+  .status-dot--pending::before { background: var(--info); }
+  .status-dot--rejected::before { background: var(--text-4); }
   .status-dot--normal { color: var(--success); }
   .status-dot--muted { color: var(--warning); }
   .status-dot--banned { color: var(--danger); }
+  .status-dot--pending { color: var(--info); }
+  .status-dot--rejected { color: var(--text-4); }
 
   .toast {
     position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-80px);
@@ -92,7 +96,7 @@
     <div class="sidebar__logo"><div class="sidebar__logo-dot"></div><span>吃什么 · 平台</span></div>
     <nav class="sidebar__nav">
       <a class="nav-item" href="dashboard.html">数据概览</a>
-      <a class="nav-item" href="audit-shops.html">商家审核 <span class="nav-item__badge">2</span></a>
+      <a class="nav-item" href="audit-shops.html">商家审核 <span class="nav-item__badge" id="auditBadge"></span></a>
       <a class="nav-item is-active" href="shops.html">店铺管理</a>
       <a class="nav-item" href="contents.html">内容管理</a>
       <a class="nav-item" href="ranking.html">推荐排名</a>
@@ -134,10 +138,13 @@
             <option value="normal">正常</option>
             <option value="muted">禁言</option>
             <option value="banned">封禁</option>
+            <option value="pending">待审核</option>
+            <option value="rejected">已驳回</option>
           </select>
         </div>
 
-        <table class="table">
+        <div class="table-scroll">
+          <table class="table" style="min-width:1060px">
           <thead>
             <tr>
               <th>店铺</th>
@@ -151,6 +158,7 @@
           </thead>
           <tbody id="body"></tbody>
         </table>
+        </div>
       </div>
     </div>
   </main>
@@ -178,13 +186,27 @@
 <script>
 let current = null;
 
-(function init() { render(); })();
+const STATUS_TEXT = {
+  normal: '正常', muted: '禁言', banned: '封禁',
+  pending: '待审核', rejected: '已驳回'
+};
+
+/** 还没上线的店（待审核 / 已驳回）不该出现在"今日发布""规则"这些运营列上 */
+function isOffline(s) { return s.status === 'pending' || s.status === 'rejected'; }
+
+(function init() {
+  var badge = document.getElementById('auditBadge');
+  var n = (MOCK.pendingShops || []).length;
+  badge.textContent = n;
+  badge.style.display = n ? '' : 'none';
+  render();
+})();
 
 function render() {
   const kw = document.getElementById('kw').value.trim();
   const fs = document.getElementById('fs').value;
 
-  const all = MOCK.shops;
+  const all = MOCK.shops || [];
   document.getElementById('cNormal').textContent = all.filter(s => s.status === 'normal').length;
   document.getElementById('cMuted').textContent = all.filter(s => s.status === 'muted').length;
   document.getElementById('cBanned').textContent = all.filter(s => s.status === 'banned').length;
@@ -200,7 +222,7 @@ function render() {
 
   body.innerHTML = list.map(s => {
     const isCustom = s.intervalHours !== 24 || s.dailyLimit !== 1;
-    const statusText = { normal: '正常', muted: '禁言', banned: '封禁' }[s.status];
+    const offline = isOffline(s);
     return `
     <tr>
       <td>
@@ -213,15 +235,16 @@ function render() {
         </div>
       </td>
       <td class="text-13 text-2">${s.city}${s.district}</td>
-      <td><span class="status-dot status-dot--${s.status}">${statusText}</span></td>
+      <td><span class="status-dot status-dot--${s.status}">${STATUS_TEXT[s.status] || s.status}</span></td>
       <td>
-        ${s.canPostToday
-          ? '<span class="tag tag--warning">今日未发</span>'
-          : '<span class="tag tag--success">今日已发</span>'}
+        ${offline ? '<span class="tag">未上线</span>'
+          : (s.canPostToday
+              ? '<span class="tag tag--warning">今日未发</span>'
+              : '<span class="tag tag--success">今日已发</span>')}
       </td>
       <td class="text-12 text-2">
-        ${s.intervalHours}h / ${s.dailyLimit}条
-        ${isCustom ? '<span class="tag tag--warning" style="margin-left:4px">自定义</span>' : ''}
+        ${offline ? '—' : s.intervalHours + 'h / ' + s.dailyLimit + '条'}
+        ${!offline && isCustom ? '<span class="tag tag--warning" style="margin-left:4px">自定义</span>' : ''}
       </td>
       <td class="text-12 text-2">
         ♥ ${MOCK.fmtNum(s.stats.likes)}<br>👣 ${MOCK.fmtNum(s.stats.checkins)}
@@ -229,19 +252,32 @@ function render() {
       <td>
         <div class="ops">
           <button class="btn btn--text btn--sm" onclick="openDetail('${s.id}')">详情</button>
-          ${s.status === 'normal'
-            ? `<button class="btn btn--text btn--sm" style="color:var(--warning)" onclick="setStatus('${s.id}','muted')">禁言</button>`
-            : `<button class="btn btn--text btn--sm" style="color:var(--success)" onclick="setStatus('${s.id}','normal')">解禁</button>`}
-          <button class="btn btn--text btn--sm" style="color:var(--danger)" onclick="setStatus('${s.id}','banned')">封店</button>
+          ${offline ? `
+            <a class="btn btn--text btn--sm" href="audit-shops.html">去审核</a>
+          ` : `
+            ${s.status === 'normal'
+              ? `<button class="btn btn--text btn--sm" style="color:var(--warning)" onclick="setStatus('${s.id}','muted')">禁言</button>`
+              : `<button class="btn btn--text btn--sm" style="color:var(--success)" onclick="setStatus('${s.id}','normal')">解禁</button>`}
+            ${s.status === 'banned'
+              ? ''
+              : `<button class="btn btn--text btn--sm" style="color:var(--danger)" onclick="setStatus('${s.id}','banned')">封店</button>`}
+          `}
         </div>
       </td>
     </tr>`;
   }).join('');
 }
 
+/*
+ * 违规处理统一走 MOCK.act：
+ *   后端在线 → 真落库，封店后客户端立刻看不到这家店
+ *   后端不在 → 改内存，原型照样能演示
+ */
 function setStatus(id, st) {
   const s = MOCK.getShop(id);
+  if (!s) return;
   const names = { normal: '解禁', muted: '禁言', banned: '封禁' };
+  const action = { normal: 'shop.restore', muted: 'shop.mute', banned: 'shop.ban' }[st];
   const tips = {
     normal: `确定解除「${s.name}」的限制？店铺将恢复正常运营。`,
     muted: `确定禁言「${s.name}」？该店铺将无法发布菜品和回复评论。`,
@@ -249,21 +285,31 @@ function setStatus(id, st) {
   };
   if (!confirm(tips[st])) return;
 
-  s.status = st;
+  const r = MOCK.act(action, { id: id });
+  if (!r.ok) { toast(r.msg || '操作失败，请重试'); return; }
+
+  // act 会把服务端返回的新对象写回列表，原来的 current 引用已过期，
+  // 所以抽屉开着时要按 id 重新取一次
   render();
+  if (current && current.id === id) openDetail(id);
   toast(`已${names[st]}「${s.name}」`);
   track('admin_shop_status', { shopId: id, status: st });
 }
 
 function openDetail(id) {
   current = MOCK.getShop(id);
+  if (!current) return;
   const s = current;
   const dishes = MOCK.getShopDishes(s.id);
+  const offline = isOffline(s);
 
   document.getElementById('drawerBody').innerHTML = `
     <div class="dt-cover"><img src="${s.cover}"></div>
 
     <div class="dt-row"><span class="dt-row__k">店铺名称</span><span class="dt-row__v">${s.name}</span></div>
+    <div class="dt-row"><span class="dt-row__k">当前状态</span><span class="dt-row__v">
+      <span class="status-dot status-dot--${s.status}">${STATUS_TEXT[s.status] || s.status}</span>
+    </span></div>
     <div class="dt-row"><span class="dt-row__k">菜系分类</span><span class="dt-row__v">${s.cuisine}</span></div>
     <div class="dt-row"><span class="dt-row__k">地址</span><span class="dt-row__v">${s.address}</span></div>
     <div class="dt-row"><span class="dt-row__k">电话</span><span class="dt-row__v">${s.phone}</span></div>
@@ -277,28 +323,37 @@ function openDetail(id) {
       <div class="dt-stat"><div class="dt-stat__num">${MOCK.fmtNum(s.stats.checkins)}</div><div class="dt-stat__label">打卡</div></div>
     </div>
 
-    <div class="field">
-      <div class="field__label">发布间隔（小时）</div>
-      <input class="num-input" type="number" id="dInterval" value="${s.intervalHours}"
-             style="width:100px" min="1" max="168">
-      <div class="field__hint">默认 24 小时；修改不影响已发布记录</div>
-    </div>
+    ${offline ? `
+      <div class="alert alert--info mb-16">
+        <span>i</span>
+        <span>该店铺尚未通过审核，暂不可配置发布规则。请到「商家审核」处理。</span>
+      </div>
+    ` : `
+      <div class="field">
+        <div class="field__label">发布间隔（小时）</div>
+        <input class="num-input" type="number" id="dInterval" value="${s.intervalHours}"
+               style="width:100px" min="1" max="168">
+        <div class="field__hint">默认 24 小时；修改不影响已发布记录</div>
+      </div>
 
-    <div class="field">
-      <div class="field__label">每日上限（条）</div>
-      <input class="num-input" type="number" id="dLimit" value="${s.dailyLimit}"
-             style="width:100px" min="1" max="10">
-      <div class="field__hint">默认 1 条</div>
-    </div>
+      <div class="field">
+        <div class="field__label">每日上限（条）</div>
+        <input class="num-input" type="number" id="dLimit" value="${s.dailyLimit}"
+               style="width:100px" min="1" max="10">
+        <div class="field__hint">默认 1 条</div>
+      </div>
 
-    <button class="btn btn--primary" onclick="saveRule()">保存发布规则</button>
+      <button class="btn btn--primary" onclick="saveRule()">保存发布规则</button>
+    `}
 
     <div class="danger-zone">
       <div class="danger-zone__title">违规处理</div>
       <div class="text-12 text-3 mb-12">三级处理：内容下架 → 商家禁言 → 封禁店铺</div>
       <div class="flex gap-8">
-        <button class="btn btn--sm btn--outline" style="color:var(--warning)" onclick="setStatus('${s.id}','muted')">禁言</button>
-        <button class="btn btn--sm btn--outline" style="color:var(--danger)" onclick="setStatus('${s.id}','banned')">封店</button>
+        ${s.status === 'normal' ? `<button class="btn btn--sm btn--outline" style="color:var(--warning)" onclick="setStatus('${s.id}','muted')">禁言</button>` : ''}
+        ${s.status === 'muted' ? `<button class="btn btn--sm btn--outline" style="color:var(--success)" onclick="setStatus('${s.id}','normal')">解禁</button>` : ''}
+        ${s.status === 'banned' ? `<button class="btn btn--sm btn--outline" style="color:var(--success)" onclick="setStatus('${s.id}','normal')">解封</button>` : ''}
+        ${s.status !== 'banned' ? `<button class="btn btn--sm btn--outline" style="color:var(--danger)" onclick="setStatus('${s.id}','banned')">封店</button>` : ''}
         <a class="btn btn--sm btn--outline" href="contents.html">去下架内容</a>
       </div>
     </div>
@@ -316,10 +371,15 @@ function saveRule() {
   if (!current) return;
   const iv = Number(document.getElementById('dInterval').value) || 24;
   const lm = Number(document.getElementById('dLimit').value) || 1;
-  current.intervalHours = iv;
-  current.dailyLimit = lm;
+
+  const r = MOCK.act('shop.rule', { id: current.id, intervalHours: iv, dailyLimit: lm });
+  if (!r.ok) { toast(r.msg || '保存失败，请重试'); return; }
+
+  const id = current.id;
   render();
+  openDetail(id);
   toast(`规则已保存：${iv} 小时 / ${lm} 条`);
+  track('admin_shop_rule', { shopId: id, intervalHours: iv, dailyLimit: lm });
 }
 
 function viewFront() {
