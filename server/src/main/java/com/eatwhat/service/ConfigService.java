@@ -33,7 +33,8 @@ public class ConfigService {
                     Map.of("id", "tier_high",  "name", "高等",   "min", 50,  "max", 150),
                     Map.of("id", "tier_ultra", "name", "超高级", "min", 150, "max", -1)
             )));
-            c.setTasteTags(toJson(List.of("麻辣", "清淡", "烧烤", "日料", "面食", "小吃", "甜点")));
+            c.setTasteTags(toJson(List.of("麻辣", "清淡", "酸甜", "烧烤", "火锅",
+                    "日料", "面食", "甜点", "汤类", "小吃")));
             c.setCuisines(toJson(List.of("川菜", "火锅", "烧烤", "日料", "面食", "小吃", "西餐", "甜品", "粤菜", "湘菜")));
             return repo.save(c);
         });

@@ -128,6 +128,21 @@ def find_chrome():
     raise SystemExit("找不到 Chrome/Edge")
 
 
+def api_data(path):
+    """直接问后端要权威数据，用来和 DOM 里显示的值对比。
+
+    为什么要这一步：早前这里写死了「待审核=2」「在营=6」，一改种子数据
+    测试就红，而且红得没意义（代码没错，只是数据变了）。
+    改成「页面显示 == 后端返回」之后，断言才真正在验证页面接对了后端。
+    """
+    base = os.environ.get("EAT_API_BASE", "http://127.0.0.1:8080")
+    with urllib.request.urlopen(base + "/api" + path, timeout=10) as r:
+        j = json.loads(r.read().decode("utf-8"))
+    if j.get("code") != 0:
+        raise SystemExit("后端 %s 返回异常：%s" % (path, j.get("msg")))
+    return j["data"]
+
+
 def ws_endpoint():
     end = time.time() + 25
     while time.time() < end:
@@ -165,6 +180,10 @@ def main():
 
         # ---------- 1. 数据概览 ----------
         print("\n[1] 数据概览 KPI 来自后端")
+        ov = api_data("/admin/overview")
+        expect_on = str(ov["shopNormal"] + ov["shopMuted"])
+        expect_pend = str(ov["shopPending"])
+
         cdp.open("%s/admin/dashboard.html?api=1" % FRONT)
         on = cdp.eval("EAT_API.isOnline()")
         check("适配层已连上后端", on is True, "isOnline=%s" % on)
@@ -177,12 +196,17 @@ def main():
                   hot:document.querySelectorAll('#hotShops .rank-mini').length};
         })()""")
         check("在营店铺 KPI 有值", kpi.get("shop") not in (None, "", "—"), str(kpi))
-        # 回归：KPI 必须是「在营」(normal+muted)=6，不能拿 shopCount=9（含待审+已驳回）充数
-        check("在营店铺 = 6（不是总数 9）", kpi.get("shop") == "6",
-              "shop=%s（若为 9 说明又拿 shopCount 当在营数了）" % kpi.get("shop"))
+        # 回归：KPI 必须是「在营」(normal+muted)，不能拿 shopCount（含待审+已驳回）充数
+        check("在营店铺 KPI == 后端 shopNormal+shopMuted",
+              kpi.get("shop") == expect_on,
+              "页面=%s 后端=%s 总数=%s（若等于总数说明又拿 shopCount 当在营数了）"
+              % (kpi.get("shop"), expect_on, ov["shopCount"]))
+        check("待审核商家 KPI == 后端 shopPending",
+              kpi.get("pend") == expect_pend, "页面=%s 后端=%s" % (kpi.get("pend"), expect_pend))
         check("KPI 不再是写死的 1,286", kpi.get("user") != "1,286", "user=%s" % kpi.get("user"))
-        check("待审核商家 = 2", kpi.get("pend") == "2", "pend=%s" % kpi.get("pend"))
-        check("今日发布菜品 > 0", kpi.get("today") not in (None, "0", "—"), "today=%s" % kpi.get("today"))
+        check("今日发布菜品 KPI == 后端 dishToday",
+              kpi.get("today") == str(ov["dishToday"]),
+              "页面=%s 后端=%s" % (kpi.get("today"), ov["dishToday"]))
         check("趋势图 7 根柱", kpi.get("bars") == 7, "bars=%s" % kpi.get("bars"))
         check("热门店铺有行", (kpi.get("hot") or 0) > 0, "hot=%s" % kpi.get("hot"))
         cdp.shot("e2e-01-dashboard.png")
@@ -291,25 +315,38 @@ def main():
         time.sleep(0.6)
 
         # ---------- 6. 用户管理：数据确实来自后端 ----------
-        print("\n[6] 用户管理：数据源确认")
+        print("\n[6] 用户管理：数据源与排序确认")
+        users = api_data("/admin/users")
         cdp.open("%s/admin/users.html?api=1" % FRONT)
         u0 = cdp.eval("(MOCK.users[0]||{}).id")
         rows = cdp.eval("document.querySelectorAll('#body tr').length")
-        # 本地 mock 的顺序是 u_001 开头；后端按举报次数倒序，首位是 u_003
-        check("用户列表首位是后端排序结果 u_003", u0 == "u_003",
-              "首位=%s（若是 u_001 说明还在用本地假数据）" % u0)
+
+        # 后端按「被举报次数」倒序。这里跟接口结果对，不写死具体是谁 ——
+        # 早前写死过「首位必须是 u_003」，一改种子数据就红，而且红得没意义。
+        reps = [u.get("reports", 0) for u in users]
+        check("后端用户按被举报次数倒序",
+              all(reps[i] >= reps[i + 1] for i in range(len(reps) - 1)),
+              "reports=%s" % reps)
+        check("页面首位 == 后端首位", u0 == users[0]["id"],
+              "页面=%s 后端=%s" % (u0, users[0]["id"]))
+        check("页面用户数 == 后端", cdp.eval("(MOCK.users||[]).length") == len(users),
+              "页面=%s 后端=%s" % (cdp.eval("(MOCK.users||[]).length"), len(users)))
         check("表格有行", rows > 0, "rows=%s" % rows)
         cdp.shot("e2e-06-users.png")
 
         # ---------- 7. 价格档 ----------
         print("\n[7] 价格档 / 标签配置")
         cdp.open("%s/admin/config.html?api=1" % FRONT)
+        cfg = api_data("/admin/config")
         tier_rows = cdp.eval("document.querySelectorAll('#tierList .tier-row').length")
         tags = cdp.eval("document.querySelectorAll('#tagCloud .cloud-tag').length")
         cuis = cdp.eval("document.querySelectorAll('#cuisineCloud .cloud-tag').length")
-        check("价格档有行", tier_rows > 0, "tiers=%s" % tier_rows)
-        check("口味标签有值", tags > 0, "tags=%s" % tags)
-        check("菜系有值（后端给 10 个）", cuis == 10, "cuisines=%s" % cuis)
+        check("价格档行数 == 后端", tier_rows == len(cfg["priceTiers"]),
+              "页面=%s 后端=%s" % (tier_rows, len(cfg["priceTiers"])))
+        check("口味标签数 == 后端", tags == len(cfg["tasteTags"]),
+              "页面=%s 后端=%s" % (tags, len(cfg["tasteTags"])))
+        check("菜系数 == 后端", cuis == len(cfg["cuisines"]),
+              "页面=%s 后端=%s" % (cuis, len(cfg["cuisines"])))
         cdp.shot("e2e-07-config.png")
 
         # ---------- 8. 页面 JS 无异常 ----------

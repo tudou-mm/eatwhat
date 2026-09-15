@@ -84,19 +84,45 @@ localStorage.setItem('useApi', '1'); location.reload();
 cd server/tools
 python test_admin_api.py         # 45 项平台端接口回归（11 组）
 python smoke_test.py 8080        # 21 项后端接口冒烟
-node test_adapter.cjs            # 18 项适配层行为测试（含后端挂掉的降级路径）
+node test_adapter.cjs            # 27 项适配层行为测试（含后端挂掉的降级路径）
+node test_filter.cjs             # 39 项筛选逻辑单测
 ```
 
 浏览器端到端（真实 Chrome + CDP，需先起前后端）：
 
 ```bash
-python drive_admin_e2e.py        # 平台端 8 页，29 项断言 + 截图到 .shots-admin/
-python drive_client.py           # 客户端页面体检
+python drive_admin_e2e.py        # 平台端 8 页，31 项断言 + 截图到 .shots-admin/
+python drive_client.py           # 客户端页面体检，13 项 + 截图到 .shots/
 ```
 
 > `drive_*.py` 需要 **venv 解释器**
 > （`~/.workbuddy/binaries/python/envs/default/Scripts/python.exe`，装了 websocket-client）；
 > 内置的 3.13.12 没装，直接用会报「需要 websocket-client」。
+>
+> 端到端脚本的数量断言一律**跟后端实时对比**，不写死数字 —— 改种子数据不用改测试。
+
+---
+
+## 演示数据
+
+数据只在 `server/src/main/java/com/eatwhat/config/DataSeeder.java` 里维护：
+
+| 集合 | 数量 |
+|---|---|
+| 店铺 | 29（在线 22 / 待审 5 / 已驳回 2） |
+| 菜品 | 54（在架 52 / 已下架 2），横跨近 7 天 |
+| 用户 | 14 |
+| 评论 | 28 |
+| 举报 | 9（待处理 5） |
+
+`assets/data/mock.js` 的数据段是**从后端导出生成的**，不手改：
+
+```bash
+python dev.py --api-only            # 另开终端，把后端跑起来
+python server/tools/export_mock.py  # 幂等，可重复跑
+```
+
+这样离线原型和在线后端永远不会分叉（曾经漂移过一次：后端口味标签 7 个、前端 10 个）。
 
 ---
 
@@ -156,9 +182,11 @@ python drive_client.py           # 客户端页面体检
 | 验证 | 结果 |
 |---|---|
 | 平台端接口回归 `test_admin_api.py` | **45 / 45** |
-| 平台端浏览器端到端 `drive_admin_e2e.py` | **29 / 29** |
-| 后端接口冒烟 `smoke_test.py` | 21 项 |
-| 适配层行为测试 `test_adapter.cjs` | 18 项 |
+| 平台端浏览器端到端 `drive_admin_e2e.py` | **31 / 31** |
+| 筛选逻辑 `test_filter.cjs` | **39 / 39** |
+| 适配层行为 `test_adapter.cjs` | **27 / 27** |
+| 后端接口冒烟 `smoke_test.py` | **21 / 21** |
+| 客户端浏览器端到端 `drive_client.py` | **13 / 13** |
 
 **三端数据打通情况**：客户端 ✅ / 平台端 ✅（读 + 写全部落库）/ 商家端 ⏳（仍以本地假数据为主）。
 
