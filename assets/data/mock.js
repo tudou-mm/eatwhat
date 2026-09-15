@@ -520,10 +520,135 @@ const MOCK = {
     return 1 - hours / 24;
   },
 
-  /* 按 Tab 生成信息流 */
-  buildFeed(tab) {
-    const items = this.dishes.filter(d => d.status === 'normal');
+  /* ---------- 筛选条件（跨页面持久化） ---------- */
 
+  /*
+   * 筛选条件存在 localStorage，这样「筛选页 → 首页」能带上，
+   * 刷新、从别的页面返回也都记得住，直到用户主动清除。
+   */
+  filterKey: 'clientFilter',
+
+  getFilter() {
+    try {
+      const raw = localStorage.getItem('clientFilter');
+      if (!raw) return { tiers: [], tastes: [] };
+      const o = JSON.parse(raw) || {};
+      return { tiers: o.tiers || [], tastes: o.tastes || [] };
+    } catch (e) {
+      return { tiers: [], tastes: [] };
+    }
+  },
+
+  setFilter(f) {
+    const v = {
+      tiers: (f && f.tiers) ? f.tiers.slice() : [],
+      tastes: (f && f.tastes) ? f.tastes.slice() : []
+    };
+    // 两个维度都空 = 没筛选，直接清掉 key，避免残留脏状态
+    if (!v.tiers.length && !v.tastes.length) localStorage.removeItem('clientFilter');
+    else localStorage.setItem('clientFilter', JSON.stringify(v));
+    return v;
+  },
+
+  clearFilter() {
+    localStorage.removeItem('clientFilter');
+    return { tiers: [], tastes: [] };
+  },
+
+  /* 当前是否处于筛选状态 */
+  filterActive(f) {
+    const x = f || this.getFilter();
+    return !!(x.tiers.length || x.tastes.length);
+  },
+
+  /* 筛选条件的中文描述，给首页顶部那条提示用 */
+  filterLabel(f) {
+    const x = f || this.getFilter();
+    const names = x.tiers.map(id => {
+      const t = this.priceTiers.find(p => p.id === id);
+      return t ? t.name : id;
+    });
+    return names.concat(x.tastes).join(' · ');
+  },
+
+  /*
+   * 单条菜品是否命中筛选条件。
+   * 维度内部 OR（选了 3 个口味，命中任一即可）
+   * 维度之间 AND（价格档和口味都要满足）
+   * —— 与 docs/05-后端接口契约.md 的口径一致。
+   */
+  matchFilter(d, f) {
+    if (!d) return false;
+    const x = f || this.getFilter();
+    if (!this.filterActive(x)) return true;
+    const tierOk = !x.tiers.length || x.tiers.includes(d.priceTierId);
+    const tasteOk = !x.tastes.length ||
+      (d.tasteTags || []).some(t => x.tastes.includes(t));
+    return tierOk && tasteOk;
+  },
+
+  /* 时间字符串 → 时间戳（内部比较用） */
+  _ts(v) {
+    if (!v) return 0;
+    if (typeof v === 'number') return v;
+    const t = new Date(String(v).replace(/-/g, '/')).getTime();
+    return isNaN(t) ? 0 : t;
+  },
+
+  /**
+   * 按 Tab 生成信息流 —— 筛选、每店一条、内容回退全部收敛在这里，
+   * 页面只负责渲染。
+   *
+   * tab    nearby（附近，按推荐权重排） | random（随心看，随机）
+   * filter { tiers, tastes }，不传就读 localStorage
+   *
+   * 三条关键规则：
+   * 1. 首页每店只露一条 —— 所以必须按 shopId 去重。
+   * 2. 筛选态下取该店「符合条件的最新一条」，且不限 24h
+   *    —— 否则筛"超高级"这类小众条件会直接筛空。
+   * 3. 筛选态下不做「不足 3 条回退旧内容」—— 回退会把不符合
+   *    条件的菜塞回来，筛选就失效了。
+   */
+  buildFeed(tab, filter) {
+    const f = filter || this.getFilter();
+    const active = this.filterActive(f);
+
+    // 1) 候选池：只取上架内容
+    let pool = this.dishes.filter(d => d.status === 'normal');
+
+    // 2) 应用筛选
+    if (active) pool = pool.filter(d => this.matchFilter(d, f));
+
+    // 3) 每店一条：取发布时间最新的那条
+    const byShop = {};
+    pool.forEach(d => {
+      const cur = byShop[d.shopId];
+      if (!cur || this._ts(d.publishedAt) > this._ts(cur.publishedAt)) {
+        byShop[d.shopId] = d;
+      }
+    });
+    let items = Object.values(byShop);
+
+    // 4) 内容不足 3 条时回退旧内容补位（决策 D2），只在未筛选时生效。
+    //    注意：当前设计下这个分支不会触发 —— 首页是「每店一条」，
+    //    而 items 已经覆盖了所有有内容的店铺，没有店可补。
+    //    保留它是给将来兜底：若给常态加上时间窗（只推 24h 内新菜），
+    //    items 会变小，那时补位才有实际意义。
+    if (!active && items.length < 3) {
+      const used = {};
+      items.forEach(d => { used[d.shopId] = true; });
+      const all = this.dishes
+        .filter(d => d.status === 'normal')
+        .sort((a, b) => this._ts(b.publishedAt) - this._ts(a.publishedAt));
+      for (const d of all) {
+        if (items.length >= 3) break;
+        if (used[d.shopId]) continue;
+        used[d.shopId] = true;
+        items.push(d);
+      }
+    }
+
+    // 5) 按 Tab 排序
     if (tab === 'random') {
       const list = [...items];
       for (let i = list.length - 1; i > 0; i--) {

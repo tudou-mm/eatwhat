@@ -70,14 +70,29 @@ public class ClientController {
         return R.ok(m);
     }
 
-    /** 信息流。tab = nearby | random */
+    /**
+     * 信息流。tab = nearby | random
+     * tiers / tastes 可选，传了就按筛选条件出流。
+     *
+     * 筛选态下的两条关键差异：
+     * 1. 每店取「符合筛选条件的最新一条」——而不是笼统的最新一条，
+     *    否则筛"麻辣"时，某店最新菜不辣就会被整店剔除，
+     *    即使店里更早有辣的菜。
+     * 2. 不做内容补位 —— 补位会把不符合条件的菜塞回来，筛选失效。
+     */
     @GetMapping("/feed")
     public R<List<Map<String, Object>>> feed(@RequestParam(defaultValue = "nearby") String tab,
                                               @RequestParam(required = false) String city,
-                                              @RequestParam(required = false) String browsed) {
+                                              @RequestParam(required = false) String browsed,
+                                              @RequestParam(required = false) List<String> tiers,
+                                              @RequestParam(required = false) List<String> tastes) {
+        boolean filtered = (tiers != null && !tiers.isEmpty())
+                        || (tastes != null && !tastes.isEmpty());
+
         // 取每家店铺的最新一条菜品（首页每店只露一条，这是冻结规则）
         Map<String, Dish> latestByShop = new HashMap<>();
         for (Dish d : dishService.listNormal()) {
+            if (filtered && !matchFilter(d, tiers, tastes)) continue;
             Dish cur = latestByShop.get(d.getShopId());
             boolean newer = cur == null
                     || (d.getPublishedTs() != null && cur.getPublishedTs() != null
@@ -97,7 +112,7 @@ public class ClientController {
         // 内容供给不足时补位（冻结规则 D2）。
         // 注意：只补「尚未出现在 feed 里的店铺」的历史内容，
         // 否则同一家店会有两条内容同时占据首页，破坏"每店一条"。
-        if (feed.size() < 3) {
+        if (!filtered && feed.size() < 3) {
             feed = new ArrayList<>(feed);
             Set<String> usedShops = new HashSet<>();
             for (Dish d : feed) usedShops.add(d.getShopId());
@@ -172,7 +187,11 @@ public class ClientController {
         return R.ok();
     }
 
-    /** 筛选：价格档 + 口味，多选 OR 逻辑 */
+    /**
+     * 筛选结果明细：返回**全部**符合条件的菜品，不做"每店一条"去重。
+     * 维度内部 OR（多选口味命中任一即可），维度之间 AND。
+     * 若要"每店一条"的筛选信息流，用 GET /feed?tiers=..&tastes=..
+     */
     @PostMapping("/filter")
     public R<List<Map<String, Object>>> filter(@RequestBody Map<String, Object> body) {
         @SuppressWarnings("unchecked")
@@ -182,9 +201,7 @@ public class ClientController {
 
         List<Map<String, Object>> out = new ArrayList<>();
         for (Dish d : dishService.listNormal()) {
-            boolean tierOk = tiers.isEmpty() || tiers.contains(d.getPriceTierId());
-            boolean tasteOk = tastes.isEmpty() || hasAny(tasteList(d), tastes);
-            if (tierOk && tasteOk) out.add(dishView(d));
+            if (matchFilter(d, tiers, tastes)) out.add(dishView(d));
         }
         return R.ok(out);
     }
@@ -299,6 +316,18 @@ public class ClientController {
     }
 
     private List<String> tasteList(Dish d) { return jsonList(d.getTasteTags()); }
+
+    /**
+     * 单条菜品是否命中筛选条件。
+     * 维度内部 OR（多选口味命中任一即可），维度之间 AND
+     * （价格档与口味都要满足）。null / 空集合表示该维度不限。
+     * —— 与 docs/05-后端接口契约.md 的口径一致。
+     */
+    private boolean matchFilter(Dish d, List<String> tiers, List<String> tastes) {
+        boolean tierOk = tiers == null || tiers.isEmpty() || tiers.contains(d.getPriceTierId());
+        boolean tasteOk = tastes == null || tastes.isEmpty() || hasAny(tasteList(d), tastes);
+        return tierOk && tasteOk;
+    }
 
     private boolean hasAny(List<String> a, List<String> b) {
         for (String s : a) if (b.contains(s)) return true;

@@ -164,6 +164,35 @@ assert('后端不可达时不抛异常', true);
 assert('已降级为本地模式', s4.EAT_API.isEnabled() === false);
 assert('降级后仍能取到数据', !!s4.MOCK.getShop('s_001'));
 
+console.log('\n== 用例 4：?api=1 模式下筛选是否真的作用于首页 ==');
+// 关键点：buildFeed 走的是 mock.js 的本地实现，但它读的 this.dishes /
+// this.getShop / this.priceTiers 已被适配层换成后端数据。
+// 所以筛选条件在本地算、数据来自后端 —— 必须实测，不能靠推理。
+const _t = s1.localStorage;
+_t.removeItem('clientFilter');
+const feedAll = s1.MOCK.buildFeed('nearby');
+assert('无筛选：信息流条数 = 有内容的店铺数（每店一条）',
+  feedAll.length > 0 && new Set(feedAll.map((d) => d.shopId)).size === feedAll.length,
+  `${feedAll.length} 条 / ${new Set(feedAll.map((d) => d.shopId)).size} 家店`);
+
+_t.setItem('clientFilter', JSON.stringify({ tiers: ['tier_mid'], tastes: [] }));
+const feedMid = s1.MOCK.buildFeed('nearby');
+assert('筛选生效：结果全部命中 tier_mid',
+  feedMid.length > 0 && feedMid.every((d) => d.priceTierId === 'tier_mid'),
+  `${feedAll.length} → ${feedMid.length} 条`);
+assert('筛选后仍守每店一条',
+  new Set(feedMid.map((d) => d.shopId)).size === feedMid.length);
+assert('filterLabel 用后端档位名',
+  s1.MOCK.filterLabel() === '中等', s1.MOCK.filterLabel());
+
+_t.setItem('clientFilter', JSON.stringify({ tiers: ['__not_exist__'], tastes: [] }));
+assert('筛空时返回空数组（关键：不回退旧内容）',
+  s1.MOCK.buildFeed('nearby').length === 0,
+  s1.MOCK.buildFeed('nearby').length + ' 条');
+assert('筛空时随机流同样为空', s1.MOCK.buildFeed('random').length === 0);
+_t.removeItem('clientFilter');
+assert('清除条件后信息流恢复', s1.MOCK.buildFeed('nearby').length === feedAll.length);
+
 console.log('\n=== 汇总 ===');
 console.log(`通过 ${pass} 项，失败 ${fail} 项`);
 process.exit(fail ? 1 : 0);

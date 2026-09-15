@@ -172,29 +172,32 @@
 
       <!-- 结果 -->
       <div class="result-bar">
-        符合条件 <span class="result-bar__num" id="resNum">0</span> 道菜品
+        符合条件 <span class="result-bar__num" id="resNum">0</span> 家店
+        <span style="color:rgba(255,255,255,.3)">·每店展示一条</span>
       </div>
       <div class="res-list" id="resList"></div>
     </div>
 
     <div class="fbar">
       <button class="fbar__btn" onclick="applyFilter()">
-        查看结果 <span id="btnNum"></span>
+        去首页看 <span id="btnNum"></span>
       </button>
     </div>
   </div>
 
   <div class="side-note">
     <h3>交互说明</h3>
-    <div class="side-note__row"><span class="side-note__k">价格档</span><span class="side-note__v">多选，OR 逻辑<br>选中任一档即满足</span></div>
-    <div class="side-note__row"><span class="side-note__k">口味</span><span class="side-note__v">多选，OR 逻辑<br>「我想吃点辣的」</span></div>
+    <div class="side-note__row"><span class="side-note__k">价格档</span><span class="side-note__v">多选，档位之间 <b>OR</b><br>选中任一档即满足</span></div>
+    <div class="side-note__row"><span class="side-note__k">口味</span><span class="side-note__v">多选，口味之间 <b>OR</b><br>命中任一即可</span></div>
+    <div class="side-note__row"><span class="side-note__k">跨维度</span><span class="side-note__v">价格档与口味之间是 <b>AND</b><br>两个维度都要满足</span></div>
     <div class="side-note__row"><span class="side-note__k">距离</span><span class="side-note__v">本期固定「不限」</span></div>
     <hr>
     <div class="side-note__row"><span class="side-note__k">实时</span><span class="side-note__v">勾选即时刷新下方结果</span></div>
-    <div class="side-note__row"><span class="side-note__k">OR 逻辑</span><span class="side-note__v">价格与口味之间是「或」<br>不是「且」</span></div>
+    <div class="side-note__row"><span class="side-note__k">同步</span><span class="side-note__v">条件实时存入本地，<b>首页信息流跟着变</b></span></div>
+    <div class="side-note__row"><span class="side-note__k">口径</span><span class="side-note__v">与首页一致：每家店只露<br>符合条件的最新一条</span></div>
     <hr>
     <div class="text-12" style="color:rgba(255,255,255,.4)">
-      价格档与口味跨维度取并集
+      筛选条件会保留，直到在首页或本页点「清除」
     </div>
   </div>
 </div>
@@ -205,22 +208,38 @@
 const S = { tiers: [], tastes: [] };
 
 (function init() {
+  // 回显上次的筛选条件 —— 用户从首页点进来时，
+  // 应该看到自己当前的选择，而不是一片空白
+  const saved = MOCK.getFilter();
+  S.tiers = saved.tiers;
+  S.tastes = saved.tastes;
+
   document.getElementById('chipPrice').innerHTML = MOCK.priceTiers.map(t =>
-    `<div class="chip" data-v="${t.id}" onclick="toggle('tiers', this)">${t.name}</div>`
+    `<div class="chip ${S.tiers.includes(t.id) ? 'is-on' : ''}" data-v="${t.id}" onclick="toggle('tiers', this)">${t.name}</div>`
   ).join('');
 
   document.getElementById('chipTaste').innerHTML = MOCK.tasteTags.map(t =>
-    `<div class="chip" data-v="${t}" onclick="toggle('tastes', this)">${t}</div>`
+    `<div class="chip ${S.tastes.includes(t) ? 'is-on' : ''}" data-v="${t}" onclick="toggle('tastes', this)">${t}</div>`
   ).join('');
 
   render();
 })();
+
+/*
+ * 改动即时落库。
+ * 之所以不用「点确定才保存」：本页本来就是实时预览的形态，
+ * 实时同步能让无论用户怎么退出，首页看到的都和这里一致。
+ */
+function sync() {
+  MOCK.setFilter({ tiers: S.tiers, tastes: S.tastes });
+}
 
 function toggle(key, el) {
   const v = el.dataset.v;
   const i = S[key].indexOf(v);
   if (i > -1) S[key].splice(i, 1); else S[key].push(v);
   el.classList.toggle('is-on');
+  sync();
   render();
 }
 
@@ -229,16 +248,17 @@ function reset() {
   document.querySelectorAll('.chip.is-on').forEach(c => {
     if (c.dataset.v) c.classList.remove('is-on');
   });
+  MOCK.clearFilter();
   render();
 }
 
+/*
+ * 结果口径必须与首页完全一致：每家店只露「符合条件的最新一条」。
+ * 否则这里显示 5 条、跳回首页只剩 3 条，用户会以为筛选坏了。
+ * 所以直接复用 buildFeed，不另写一套过滤逻辑。
+ */
 function getResult() {
-  return MOCK.dishes.filter(d => d.status === 'normal').filter(d => {
-    const tierOk = !S.tiers.length || S.tiers.includes(d.priceTierId);
-    const tasteOk = !S.tastes.length ||
-      (d.tasteTags || []).some(t => S.tastes.includes(t));
-    return tierOk && tasteOk;
-  });
+  return MOCK.buildFeed('nearby', { tiers: S.tiers, tastes: S.tastes });
 }
 
 function render() {
@@ -246,13 +266,13 @@ function render() {
   const n = list.length;
 
   document.getElementById('resNum').textContent = n;
-  document.getElementById('btnNum').textContent = n ? `（${n}）` : '';
+  document.getElementById('btnNum').textContent = n ? `（${n} 家店）` : '';
 
   const el = document.getElementById('resList');
   if (!n) {
     el.innerHTML = '<div class="empty" style="color:rgba(255,255,255,.4);padding:40px 0">' +
       '<div class="empty__icon">🍽</div><div class="empty__text">没有符合条件的菜品</div>' +
-      '<div class="empty__hint">试试放宽筛选条件</div></div>';
+      '<div class="empty__hint">试试放宽筛选条件，或点右上角重置</div></div>';
     return;
   }
 
@@ -263,7 +283,7 @@ function render() {
         <div class="res-item__img"><img src="${d.cover || d.media[0]}"></div>
         <div style="flex:1;min-width:0;display:flex;flex-direction:column">
           <div class="res-item__name">${d.name}</div>
-          <div class="res-item__shop">🏪 ${d.shopName}</div>
+          <div class="res-item__shop">🏪 ${d.shopName} · ${MOCK.timeAgo(d.publishedAt)}</div>
           <div class="res-item__meta">
             ${tier ? `<span class="tag ${MOCK.tierClass(tier.id)}">${tier.name}</span>` : ''}
             ${(d.tasteTags || []).slice(0, 2).map(t => `<span class="tag-dark" style="font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(255,255,255,.12);color:rgba(255,255,255,.85)">${t}</span>`).join('')}
@@ -276,6 +296,7 @@ function render() {
 }
 
 function applyFilter() {
+  sync();
   track('filter_apply', { tiers: S.tiers, tastes: S.tastes });
   location.href = 'feed.html';
 }

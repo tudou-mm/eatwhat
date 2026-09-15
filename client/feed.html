@@ -65,7 +65,59 @@
     background: rgba(255,255,255,.15); backdrop-filter: blur(8px);
     display: flex; align-items: center; justify-content: center;
     color: #fff; font-size: 15px; cursor: pointer;
+    transition: background .18s;
   }
+
+  /* 有筛选条件时齿轮实心高亮，让用户一眼看出"首页被筛过" */
+  .filter-btn.is-on { background: #FE2C55; }
+  .filter-btn.is-on:hover { background: #E62248; }
+
+  /* 筛选状态条：只在筛选生效时出现，可一键清除 */
+  .filter-bar {
+    position: absolute; top: 86px; left: 16px; right: 16px; z-index: 49;
+    display: none; align-items: center; gap: 8px;
+    padding: 7px 10px 7px 12px; border-radius: 18px;
+    background: rgba(0,0,0,.5); backdrop-filter: blur(12px);
+    border: 1px solid rgba(254,44,85,.4);
+    font-size: 12px; color: #fff;
+  }
+  .filter-bar.is-on { display: flex; }
+
+  .filter-bar__dot {
+    width: 6px; height: 6px; border-radius: 50%; background: #FE2C55;
+    flex-shrink: 0; box-shadow: 0 0 6px rgba(254,44,85,.9);
+  }
+
+  .filter-bar__text {
+    flex: 1; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+    color: rgba(255,255,255,.92);
+  }
+
+  .filter-bar__clear {
+    flex-shrink: 0; padding: 3px 10px; border-radius: 10px;
+    background: rgba(255,255,255,.14); font-size: 11px;
+    cursor: pointer; transition: background .15s;
+  }
+  .filter-bar__clear:hover { background: rgba(255,255,255,.26); }
+
+  /* 筛选后无结果的空态 */
+  .feed-empty {
+    height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px;
+    padding: 0 40px; text-align: center;
+  }
+  .feed-empty__icon { font-size: 46px; opacity: .45; }
+  .feed-empty__title { font-size: 16px; color: #fff; }
+  .feed-empty__desc {
+    font-size: 12px; color: rgba(255,255,255,.45); line-height: 1.8;
+  }
+  .feed-empty__btn {
+    margin-top: 10px; height: 40px; padding: 0 22px; border-radius: 20px;
+    background: #FE2C55; color: #fff; font-size: 14px; cursor: pointer;
+    transition: background .15s;
+  }
+  .feed-empty__btn:hover { background: #E62248; }
 
   /* 信息流 */
   .feed {
@@ -306,7 +358,14 @@
         <div class="feed-tab" data-tab="random" onclick="switchTab('random')">随心看</div>
       </div>
 
-      <div class="filter-btn" onclick="location.href='filter.html'">⚙</div>
+      <div class="filter-btn" id="filterBtn" onclick="location.href='filter.html'">⚙</div>
+
+      <!-- 筛选状态条：只在筛选生效时显示 -->
+      <div class="filter-bar" id="filterBar">
+        <span class="filter-bar__dot"></span>
+        <span class="filter-bar__text" id="filterText">筛选：—</span>
+        <span class="filter-bar__clear" onclick="clearFilter()">清除</span>
+      </div>
 
       <!-- 信息流 -->
       <div class="feed" id="feed"></div>
@@ -365,8 +424,13 @@
     <div class="side-note__row"><span class="side-note__k">更多</span><span class="side-note__v">分享／导航／电话／跳第三方收起在 ⋯ 里</span></div>
     <div class="side-note__row"><span class="side-note__k">未登录</span><span class="side-note__v">点赞／收藏／评论会拦截并提示登录</span></div>
     <hr>
+    <div class="side-note__row"><span class="side-note__k">筛选</span><span class="side-note__v">右上角 ⚙ 进筛选页<br>条件<b>实时同步</b>，首页信息流跟着变</span></div>
+    <div class="side-note__row"><span class="side-note__k">筛选中</span><span class="side-note__v">顶部出现条件条，可一键清除</span></div>
+    <div class="side-note__row"><span class="side-note__k">筛选后</span><span class="side-note__v">取每家店<b>符合条件的最新一条</b><br>不限 24h，避免小众条件筛空</span></div>
+    <hr>
+    <div class="side-note__row"><span class="side-note__k">每店一条</span><span class="side-note__v">首页每店只露最新一条，不刷屏</span></div>
     <div class="side-note__row"><span class="side-note__k">时间衰减</span><span class="side-note__v">超 24h 权重归零但不删除，仍可刷到</span></div>
-    <div class="side-note__row"><span class="side-note__k">内容不足</span><span class="side-note__v">不足 3 条时自动回退展示旧内容</span></div>
+    <div class="side-note__row"><span class="side-note__k">内容不足</span><span class="side-note__v">不足 3 条时回退旧内容<br><b>仅未筛选时生效</b></span></div>
     <hr>
     <div class="text-12" style="color:rgba(255,255,255,.4)">提示：改 <code>mock.js</code> 里 <code>currentUser.loggedIn</code> 可切换登录态</div>
   </div>
@@ -385,17 +449,49 @@ const S = {
 
 /* ---------- 初始化 ---------- */
 (function init() {
+  updateFilterUI();
   buildFeed();
 })();
 
-function buildFeed() {
-  let list = MOCK.buildFeed(S.tab);
+/* ---------- 筛选状态 ---------- */
 
-  // 规则：内容不足 3 条时，回退展示 24h 以前的旧内容（决策 D2）
-  if (list.length < 3) {
-    const older = MOCK.dishes.filter(d => d.status === 'normal' && MOCK.timeDecay(d.publishedAt) === 0);
-    list = list.concat(older);
+/* 同步顶部筛选条与齿轮按钮的显示状态 */
+function updateFilterUI() {
+  const active = MOCK.filterActive();
+  document.getElementById('filterBar').classList.toggle('is-on', active);
+  document.getElementById('filterBtn').classList.toggle('is-on', active);
+  if (active) {
+    document.getElementById('filterText').textContent = '筛选：' + MOCK.filterLabel();
   }
+}
+
+/* 一键清除筛选，恢复完整信息流 */
+function clearFilter() {
+  MOCK.clearFilter();
+  updateFilterUI();
+  closeShopCard();
+  document.getElementById('feed').scrollTop = 0;
+  buildFeed();
+  track('filter_clear', {});
+}
+
+/*
+ * 从浏览器的前进/后退回到本页时，脚本不会重跑（bfcache），
+ * 而筛选条件可能已经在筛选页被改过 —— 这里手动补一次刷新。
+ */
+window.addEventListener('pageshow', e => {
+  if (e.persisted) {
+    updateFilterUI();
+    document.getElementById('feed').scrollTop = 0;
+    buildFeed();
+  }
+});
+
+function buildFeed() {
+  // 筛选、每店一条、内容不足回退，全部收敛在 MOCK.buildFeed 内部。
+  // 注意：筛选生效时它不会回退旧内容 —— 否则会把不符合条件的
+  // 菜补回来，筛选就形同虚设了。
+  let list = MOCK.buildFeed(S.tab);
 
   // 随心看：排除已浏览
   if (S.tab === 'random') {
@@ -409,8 +505,23 @@ function buildFeed() {
 
 function renderFeed() {
   const el = document.getElementById('feed');
+
   if (!S.feed.length) {
-    el.innerHTML = '<div class="fc"><div class="flex-center" style="height:100%;color:rgba(255,255,255,.4)">暂无内容</div></div>';
+    // 筛空时必须给出出路，否则用户会以为首页坏了
+    const active = MOCK.filterActive();
+    el.innerHTML = `
+      <div class="fc">
+        <div class="feed-empty">
+          <div class="feed-empty__icon">🍽</div>
+          <div class="feed-empty__title">
+            ${active ? '没有符合条件的菜品' : '暂无内容'}
+          </div>
+          ${active ? `<div class="feed-empty__desc">当前筛选：${MOCK.filterLabel()}</div>` : ''}
+          ${active
+            ? '<button class="feed-empty__btn" onclick="clearFilter()">清除筛选，看全部</button>'
+            : '<button class="feed-empty__btn" onclick="location.href=\'filter.html\'">去筛选</button>'}
+        </div>
+      </div>`;
     return;
   }
 
