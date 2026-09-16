@@ -4,11 +4,14 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Date;
 
 /**
@@ -19,9 +22,15 @@ import java.util.Date;
  *   merchant —— 商户，只能打 /api/merchant/**，且只能碰自己那家店
  *   client   —— 食客，目前不拦任何接口（客户端免登录浏览），留着备用
  *
- * 密钥从 eatwhat.jwt.secret 读，**上线必须换掉**（或用环境变量
- * EATWHAT_JWT__SECRET 覆盖）。
+ * 密钥从 `eatwhat.jwt.secret` 读，但配置里写的是
+ * `${EATWHAT_JWT_SECRET:<开发默认值>}` —— **密钥本身不进代码仓库**。
+ *
+ * ⚠️ 两条硬规则：
+ * 1. 启动时校验至少 32 字节（HS256 要求），不够直接起不来。
+ * 2. 如果**跑在 prod profile 下却还在用开发默认密钥**，直接拒绝启动。
+ *    密钥泄漏 = 任何人都能自己签一张 admin token，这比启动失败严重得多。
  */
+@Slf4j
 @Component
 public class JwtUtil {
 
@@ -32,17 +41,39 @@ public class JwtUtil {
     /** HS256 要求密钥至少 256 bit，短了直接启动失败，别等到线上才发现 */
     private static final int MIN_SECRET_BYTES = 32;
 
+    /**
+     * 开发用默认密钥。**必须与 application.yml 里的默认值一字不差**，
+     * 否则 prod 校验形同虚设。
+     */
+    public static final String DEV_SECRET = "eatwhat-dev-only-secret-please-override-32b";
+
     private final SecretKey key;
     private final long expireMillis;
 
     public JwtUtil(@Value("${eatwhat.jwt.secret}") String secret,
-                   @Value("${eatwhat.jwt.expireHours:168}") long expireHours) {
+                   @Value("${eatwhat.jwt.expireHours:168}") long expireHours,
+                   Environment env) {
         byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
         if (bytes.length < MIN_SECRET_BYTES) {
             throw new IllegalStateException(
                     "eatwhat.jwt.secret 至少需要 " + MIN_SECRET_BYTES + " 字节（HS256 要求），当前 "
-                            + bytes.length + " 字节。请改长一点，或用环境变量 EATWHAT_JWT__SECRET 覆盖。");
+                            + bytes.length + " 字节。请改长一点，并用环境变量 EATWHAT_JWT_SECRET 注入。");
         }
+
+        boolean prod = Arrays.asList(env.getActiveProfiles()).contains("prod");
+        if (DEV_SECRET.equals(secret)) {
+            if (prod) {
+                throw new IllegalStateException(
+                        "生产环境（prod profile）仍在用开发默认 JWT 密钥。"
+                                + "请设置环境变量 EATWHAT_JWT_SECRET 为一段随机的 32 字节以上字符串。"
+                                + "用默认密钥上线，等于任何人都能自己签一张 admin token。");
+            }
+            log.warn("──────────────────────────────────────────────────────────");
+            log.warn(" eatwhat.jwt.secret 用的是【开发默认密钥】，仅供本地调试。");
+            log.warn(" 部署前务必注入环境变量 EATWHAT_JWT_SECRET。");
+            log.warn("──────────────────────────────────────────────────────────");
+        }
+
         this.key = Keys.hmacShaKeyFor(bytes);
         this.expireMillis = expireHours * 3600_000L;
     }

@@ -92,32 +92,44 @@
 
   // ================= 登录态（JWT） =================
 
-  var TOKEN_KEY = 'eatwhat_token';
-  var ROLE_KEY = 'eatwhat_token_role';
+  /**
+   * 会话**按角色分 key 存**。
+   *
+   * 原来三端共用一个 `eatwhat_token`，后果是：同一个浏览器里先登平台端、
+   * 再打开商家端，商家端的 token 就被顶掉了 —— 适配层拿着 admin token 去
+   * 请求 /api/merchant/**，被 403 挡回，页面静默变空白。
+   * 而演示时三端本来就是同一个浏览器来回切的，这个坑一定会踩到。
+   *
+   * 现在按角色分开，一个浏览器可以同时持有三端身份，互不干扰。
+   * 没有显式传角色时，用当前所在的端（END）。
+   */
+  function tokenKey(role) { return 'eatwhat_token_' + (role || END); }
+  function roleKey(role) { return 'eatwhat_token_role_' + (role || END); }
 
-  function getToken() {
-    try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return null; }
+  function getToken(role) {
+    try { return localStorage.getItem(tokenKey(role)); } catch (e) { return null; }
   }
 
-  function getTokenRole() {
-    try { return localStorage.getItem(ROLE_KEY); } catch (e) { return null; }
+  function getTokenRole(role) {
+    try { return localStorage.getItem(roleKey(role)); } catch (e) { return null; }
   }
 
   /** 记下这次登录。**只存 token，不存密码** —— 密码留在 localStorage 里是隐患 */
   function saveSession(role, data) {
     try {
-      localStorage.setItem(TOKEN_KEY, data.token);
-      localStorage.setItem(ROLE_KEY, role);
+      localStorage.setItem(tokenKey(role), data.token);
+      localStorage.setItem(roleKey(role), role);
       if (role === 'merchant' && data.shopId) {
         localStorage.setItem('merchantShopId', data.shopId);
       }
     } catch (e) { /* 隐私模式下写不进去，忽略 */ }
   }
 
-  function clearSession() {
+  /** 只清当前端（或指定角色）的会话，不动其他端的 */
+  function clearSession(role) {
     try {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(ROLE_KEY);
+      localStorage.removeItem(tokenKey(role));
+      localStorage.removeItem(roleKey(role));
     } catch (e) { /* 同上 */ }
   }
 
@@ -149,12 +161,61 @@
     return null;
   }
 
-  /** 登录（同步）。成功后落盘 token，返回后端给的整个 data */
-  function login(role, account, password) {
-    var data = syncRequest('POST', '/auth/login',
-      { role: role, account: account, password: password }, true);
+  /**
+   * 登录（同步）。成功后落盘 token，返回后端给的整个 data。
+   *
+   * 四种用法：
+   *   login('admin',    'admin',         'admin123')          平台端账号密码
+   *   login('merchant', 's_001',         '123456')            商家账号密码
+   *   login('merchant', '13800138000',   null, '483920')      商家手机号 + 短信验证码
+   *   login('client',   '13800000001',   '483920')            客户端手机号 + 验证码
+   *
+   * 客户端走 /login（手机号 + 验证码，验证码由 /auth/sms-code 下发），
+   * 平台端 / 商家端走 /auth/login。
+   *
+   * 离线模式：不发请求直接放行 —— 原型阶段不接后端也要能"登录"进去看页面，
+   * 返回 `{ offline: true }`，调用方可以据此提示"离线演示模式"。
+   */
+  function login(role, account, password, code) {
+    if (!enabled) {
+      return {
+        offline: true,
+        role: role,
+        account: account,
+        shopId: role === 'merchant' ? merchantShopId() : null,
+        name: role === 'admin' ? '平台运营' : ''
+      };
+    }
+
+    var path, body;
+    if (role === 'client') {
+      path = '/login';
+      body = { phone: account, code: code || password };
+    } else {
+      path = '/auth/login';
+      body = { role: role, account: account };
+      if (code) body.code = code; else body.password = password;
+    }
+
+    var data = syncRequest('POST', path, body, true);
     saveSession(role, data);
     return data;
+  }
+
+  /**
+   * 获取短信验证码（同步）。返回 { sent, expiresIn, resendAfter, devCode? }。
+   *
+   * `devCode` 只有后端开了 `echoSmsCode` 才有（本地调试用），
+   * 生产环境这个字段不存在，码只能从短信里拿。
+   * 60 秒内重发、或发得太频繁，后端会返回 429，异常消息里带还要等几秒。
+   */
+  function sendSmsCode(phone, scene) {
+    if (!enabled) {
+      // 离线降级：给个固定码，原型照样能演示完整登录流程
+      return { sent: true, offline: true, devCode: '123456', expiresIn: 300, resendAfter: 60 };
+    }
+    return syncRequest('POST', '/auth/sms-code',
+      { phone: phone, scene: scene || 'login' }, true);
   }
 
   // ================= 同步请求（见文首说明） =================
@@ -473,6 +534,7 @@
     // ---- 登录态 / 上传 ----
     login: login,
     logout: clearSession,
+    sendSmsCode: sendSmsCode,
     token: getToken,
     role: getTokenRole,
     isLoggedIn: function () { return !!ensureToken(); },
@@ -1188,6 +1250,7 @@
     window.MOCK.preloadSync = preloadSync;   // 页面手动刷新用（如商家端审核页）
     window.MOCK.login = login;               // 登录页用
     window.MOCK.logout = clearSession;
+    window.MOCK.sendSmsCode = sendSmsCode;    // 「获取验证码」按钮用
     window.MOCK.upload = upload;             // 选图 / 选视频后传这里
     window.MOCK.isLoggedIn = API.isLoggedIn;
 

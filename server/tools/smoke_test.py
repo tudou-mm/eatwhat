@@ -4,7 +4,7 @@
     python smoke_test.py [port]
 覆盖：健康检查 / 三端读接口 / 核心写接口 / 关键业务规则验证。
 """
-import urllib.request, urllib.error, json, time, sys
+import urllib.request, urllib.error, json, time, sys, re
 
 PORT = sys.argv[1] if len(sys.argv) > 1 else '8080'
 BASE = 'http://127.0.0.1:%s' % PORT
@@ -68,6 +68,22 @@ def login(role, account, password):
     return j['data']['token']
 
 
+def send_code(phone):
+    """
+    取短信验证码（客户端登录现在要真码）。
+    dev 环境后端会把验证码回显在 devCode 里；被 60 秒重发限制挡住时等一等，
+    这样脚本连着跑第二遍不用手动处理。
+    """
+    st, j = call('POST', '/api/auth/sms-code', {'phone': phone})
+    if st == 429:
+        m = re.search(r'(\d+)\s*秒', (j or {}).get('msg', '') if isinstance(j, dict) else '')
+        if m and int(m.group(1)) <= 70:
+            time.sleep(int(m.group(1)) + 1)
+            st, j = call('POST', '/api/auth/sms-code', {'phone': phone})
+    code = (j.get('data') or {}).get('devCode') if isinstance(j, dict) else None
+    return st, code
+
+
 def brief(data):
     if isinstance(data, list):
         return 'list[%d]' % len(data)
@@ -86,7 +102,13 @@ def check(label, method, path, body=None, expect_code=0, want=None):
     else:
         code, msg, data = st, str(j)[:120], None
 
-    ok = (st == 200 and code == expect_code)
+    # 成功要求 HTTP 200；失败断言两种都认 —— v1.3 起错误响应的
+    # HTTP 状态码 = 业务 code（401/403/400 都是真状态码），
+    # 老写法「HTTP 200 里塞 code」也仍然兼容。
+    if expect_code == 0:
+        ok = (st == 200 and code == 0)
+    else:
+        ok = (code == expect_code and st in (200, expect_code))
     note = ''
     if ok and want is not None:
         try:
@@ -167,10 +189,17 @@ check('shop dishes', 'GET', '/api/client/shop/s_001/dishes')
 check('dish detail', 'GET', '/api/client/dish/d_001')
 check('dish comments', 'GET', '/api/client/dish/d_001/comments')
 check('filter (按价格档)', 'POST', '/api/client/filter', {'tiers': ['tier_mid'], 'tastes': []})
-check('login', 'POST', '/api/login', {'phone': '13800138000', 'code': '123456'},
+# 客户端登录现在要真验证码：先发码，dev 环境后端会把码回显在 devCode 里
+_st, _code = send_code('13900000001')
+print('  sms-code 发码 → http=%s devCode=%s' % (_st, _code), flush=True)
+
+check('login（手机号 + 真实验证码）', 'POST', '/api/login',
+      {'phone': '13900000001', 'code': _code},
       want=lambda d: (bool(d.get('token')), 'token=%s' % str(d.get('token'))[:20]))
 check('login 手机号非法应被拒', 'POST', '/api/login', {'phone': '123', 'code': '123456'},
       expect_code=400)
+check('login 没发码就登应被拒', 'POST', '/api/login',
+      {'phone': '13900000009', 'code': '123456'}, expect_code=400)
 
 print('\n--- 3. 商家端 ---')
 check('merchant dashboard', 'GET', '/api/merchant/dashboard/s_001')

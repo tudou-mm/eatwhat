@@ -213,12 +213,29 @@ function sendCode() {
   const p = document.getElementById('phone').value.trim();
   if (!/^1\d{10}$/.test(p)) { toast('请先输入正确的手机号'); return; }
 
+  // 接上后端就是真发码：同号 60 秒内不能重发、同 IP 每小时有上限，
+  // 超了后端返回 429，异常消息里带「还要等几秒」。
+  // 离线时适配层返回固定码 123456，原型照样能演示完整流程。
+  let tip = '验证码已发送';
+  let wait = 60;
+  try {
+    const r = (window.MOCK && MOCK.sendSmsCode) ? MOCK.sendSmsCode(p) : { devCode: '123456' };
+    if (r) {
+      if (r.resendAfter) wait = r.resendAfter;
+      if (r.offline) tip = '验证码已发送（离线演示：123456）';
+      else if (r.devCode) tip = '验证码：' + r.devCode;
+    }
+  } catch (e) {
+    toast(e.message || '发送失败');
+    return;
+  }
+
   counting = true;
-  let n = 60;
+  let n = wait;
   const btn = document.getElementById('codeBtn');
   btn.classList.add('is-disabled');
   btn.textContent = n + 's 后重发';
-  toast('验证码已发送（原型不校验）');
+  toast(tip);
 
   const t = setInterval(() => {
     n--;
@@ -233,15 +250,28 @@ function sendCode() {
 }
 
 function doLogin() {
-  const ok = /^1\d{10}$/.test(document.getElementById('phone').value.trim());
+  const p = document.getElementById('phone').value.trim();
   const c = document.getElementById('code').value.trim();
-  if (!ok) { toast('请输入正确的手机号'); return; }
+  if (!/^1\d{10}$/.test(p)) { toast('请输入正确的手机号'); return; }
   if (!/^\d{6}$/.test(c)) { toast('请输入 6 位验证码'); return; }
   if (!agreed) { toast('请先同意用户协议'); return; }
 
+  // 有适配层就交给后端真校验验证码（错码/过期/试太多次都会被拒）；
+  // 没接后端时适配层直接放行，保证原型能演示。
+  let offline = false;
+  if (window.MOCK && typeof MOCK.login === 'function') {
+    try {
+      const d = MOCK.login('client', p, null, c);
+      offline = !!(d && d.offline);
+    } catch (e) {
+      toast(e.message || '登录失败');
+      return;
+    }
+  }
+
   MOCK.currentUser.loggedIn = true;
   localStorage.setItem('loggedIn', '1');
-  toast('登录成功');
+  toast(offline ? '登录成功（离线演示）' : '登录成功');
   setTimeout(() => {
     const from = new URLSearchParams(location.search).get('from');
     location.href = from || 'feed.html';

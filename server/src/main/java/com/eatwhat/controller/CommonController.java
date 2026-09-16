@@ -1,10 +1,14 @@
 package com.eatwhat.controller;
 
 import com.eatwhat.auth.JwtUtil;
+import com.eatwhat.auth.LoginGuard;
+import com.eatwhat.auth.SmsCodeStore;
+import com.eatwhat.common.BizException;
 import com.eatwhat.common.R;
 import com.eatwhat.common.Views;
 import com.eatwhat.entity.AppUser;
 import com.eatwhat.service.AppUserService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
@@ -24,11 +28,16 @@ public class CommonController {
     private final AppUserService userService;
     private final JwtUtil jwt;
     private final Views views;
+    private final LoginGuard guard;
+    private final SmsCodeStore smsStore;
 
-    public CommonController(AppUserService userService, JwtUtil jwt, Views views) {
+    public CommonController(AppUserService userService, JwtUtil jwt, Views views,
+                            LoginGuard guard, SmsCodeStore smsStore) {
         this.userService = userService;
         this.jwt = jwt;
         this.views = views;
+        this.guard = guard;
+        this.smsStore = smsStore;
     }
 
     @GetMapping("/health")
@@ -40,16 +49,25 @@ public class CommonController {
     }
 
     /**
-     * 客户端登录：手机号 + 验证码（演示环境任意 6 位数字均可）。
-     * 客户端目前免登录浏览，这个接口暂时没有接口依赖它，留作后续做「我的」页用。
+     * 客户端登录：手机号 + 短信验证码。
+     *
+     * **验证码现在是真校验的**（原先任意 6 位都算过）。码由
+     * `POST /api/auth/sms-code` 下发，60 秒内不能重发、5 分钟过期、
+     * 错 5 次作废、用后即焚（见 {@link SmsCodeStore}）。
+     * 手机号不存在则自动注册。
      */
     @PostMapping("/login")
-    public R<Map<String, Object>> login(@RequestBody Map<String, Object> body) {
+    public R<Map<String, Object>> login(@RequestBody Map<String, Object> body,
+                                        HttpServletRequest req) {
         String phone = String.valueOf(body.get("phone"));
         String code = body.get("code") == null ? "" : body.get("code").toString();
 
-        if (!phone.matches("^1\\d{10}$")) return R.fail(400, "手机号格式不正确");
-        if (!code.matches("^\\d{6}$")) return R.fail(400, "验证码为 6 位数字");
+        if (!phone.matches("^1\\d{10}$")) throw new BizException(400, "手机号格式不正确");
+        if (!code.matches("^\\d{6}$")) throw new BizException(400, "验证码为 6 位数字");
+
+        guard.beforeAttempt(phone, req.getRemoteAddr());
+        smsStore.verify(phone, code);
+        guard.onSuccess(phone);
 
         AppUser u = userService.loginByPhone(phone);
         Map<String, Object> m = new LinkedHashMap<>();

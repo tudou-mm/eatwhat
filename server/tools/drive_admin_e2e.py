@@ -216,7 +216,7 @@ def main():
         check("密码错误留在登录页并提示", bool(err_txt) and "不正确" in str(err_txt),
               "err=%r" % err_txt)
         check("密码错误时没有落盘 token",
-              not cdp.eval("localStorage.getItem('eatwhat_token')"))
+              not cdp.eval("localStorage.getItem('eatwhat_token_admin')"))
 
         cdp.open("%s/admin/login.html?api=1" % FRONT)
         cdp.eval("""(function(){
@@ -232,8 +232,10 @@ def main():
         check("登录成功后跳到工作台",
               bool(cdp.eval("location.pathname.indexOf('dashboard') >= 0")),
               str(cdp.eval("location.href")))
-        tok = cdp.eval("localStorage.getItem('eatwhat_token')")
-        check("token 已落盘且是真 JWT（三段式）",
+        tok = cdp.eval("localStorage.getItem('eatwhat_token_admin')")
+        check("token 按端分 key 落盘（eatwhat_token_admin）", bool(tok),
+              "token=%s" % str(tok)[:24])
+        check("落盘的是真 JWT（三段式）",
               bool(tok) and str(tok).count(".") == 2, "token=%s" % str(tok)[:24])
 
         # ---------- 1. 数据概览 ----------

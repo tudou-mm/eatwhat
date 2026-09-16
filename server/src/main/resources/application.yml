@@ -36,13 +36,31 @@ eatwhat:
     # 演示用超管账号。⚠️ 上线必须改，或用环境变量覆盖
     adminAccount: admin
     adminPassword: admin123
-    # 商家端原型阶段的统一密码（真实系统应走短信验证码，见 docs/05）
+    # 商家端原型阶段的统一密码（正式上线应改走短信验证码登录，接口已就绪）
     merchantPassword: "123456"
+
+    # 短信验证码调试回显：true 时 /api/auth/sms-code 会把验证码放进 devCode 字段
+    # ⚠️ 生产必须 false —— 否则验证码跟着接口返回，等于没校验
+    echoSmsCode: true
+
+    # 验证码寿命与频率
+    smsCodeExpireSeconds: 300      # 5 分钟有效
+    smsResendSeconds: 60           # 同号 60 秒内不能重发
+    smsMaxTries: 5                 # 错 5 次作废，防暴力试码
+    smsIpMaxPerHour: 30            # 同 IP 每小时发码上限，防短信轰炸
+
+    # 登录防撞库
+    maxLoginAttempts: 5            # 同账号连续失败几次开始锁
+    lockMinutes: 15                # 锁多久（锁定期间密码正确也拒绝）
+    ipMaxPerMinute: 60             # 同 IP 每分钟登录尝试上限
+                                   # （正常用户 1 分钟登不了 60 次，但回归脚本跑两遍会）
 
   # ---------- JWT ----------
   jwt:
-    # ⚠️ 上线必须换成随机长串，可用环境变量 EATWHAT_JWT__SECRET 覆盖
-    secret: "eatwhat-dev-only-secret-please-change-in-production-8f3a2b1c9d"
+    # 密钥**不进代码仓库**：用环境变量 EATWHAT_JWT_SECRET 注入，
+    # 这里只是本地开发用的默认值。跑在 prod profile 下若仍是这个默认值，
+    # 服务会直接拒绝启动（见 JwtUtil）——用默认密钥上线等于人人都能签 admin token。
+    secret: ${EATWHAT_JWT_SECRET:eatwhat-dev-only-secret-please-override-32b}
     expireHours: 168
 
   # ---------- 文件上传 ----------

@@ -75,18 +75,25 @@ localStorage.setItem('useApi', '1'); location.reload();
 
 ### 登录账号（仅演示）
 
-| 端 | 账号 | 密码 |
-|---|---|---|
-| 平台端 | `admin` | `admin123` |
-| 商家端 | 店铺 ID（如 `s_001`）**或**店内电话 `13800138000` | `123456` |
-| 客户端 | 任意手机号（自动注册） | 任意 6 位验证码 |
+| 端 | 登录方式 | 账号 | 凭证 |
+|---|---|---|---|
+| 平台端 | 账号密码 | `admin` | `admin123` |
+| 商家端 | 账号密码 | 店铺 ID（`s_001`）或店内电话 `13800138000` | `123456` |
+| 商家端 | 手机号 + 验证码 | `13800138000` | 点「获取验证码」，**验证码直接显示在提示里** |
+| 客户端 | 手机号 + 验证码 | 任意手机号（自动注册） | 同上 |
 
-登录后走 **JWT（HS256）**，之后所有请求带 `Authorization: Bearer <token>`；
-`/api/admin/**` 要 admin、`/api/merchant/**` 要 merchant（且只能碰自己那家店）、
-`/api/upload` 要 admin 或 merchant。适配层自动带 token，**遇到 401 会引回登录页**。
+登录后走 **JWT（HS256）**，之后所有请求带 `Authorization: Bearer <token>`。
+**会话按角色分 key 存**（`eatwhat_token_admin` / `_merchant` / `_client`），
+所以同一个浏览器可以同时登三端，互不顶掉。
 
-> 演示密码是**硬编码的简化**，上线前必须换成手机号 + 短信验证码，
-> 详见 `docs/05` 的「已知简化」。
+登录有防撞库：**同账号连错 5 次锁 15 分钟**（锁定期间密码正确也拒）。
+想试的话请用别的账号试，别把 `admin` 锁了。
+
+> 验证码是**真的在校验**（不是随便填 6 位就过），只是短信没真发出去 ——
+> 开发环境把验证码回显在提示里。上线前把 `echoSmsCode` 关掉、`SmsSender`
+> 换成真实网关即可，业务代码一行不用改。详见 `docs/05` 的「已知简化」。
+>
+> 验证码有 **60 秒重发限制**，同一个号连续发码会提示「请稍后再试」。
 
 适配层 `assets/js/api.js` 保持了与 `mock.js` 完全相同的**同步**函数签名，
 所以**三端页面接入后端时一行代码都不用改**。后端没启动会自动降级回假数据。
@@ -98,24 +105,32 @@ localStorage.setItem('useApi', '1'); location.reload();
 
 ```bash
 cd server/tools
+python test_login_security.py    # 34 项登录防撞库 / 验证码专项（6 组）
 python test_auth_api.py          # 54 项鉴权 / 上传 / CORS 专项（5 组）
 python test_admin_api.py         # 47 项平台端接口回归（11 组）
 python test_merchant_api.py      # 76 项商家端接口回归（12 组）
-python smoke_test.py 8080        # 24 项后端接口冒烟
+python smoke_test.py 8080        # 25 项后端接口冒烟
 node test_adapter.cjs            # 27 项适配层行为测试（含后端挂掉的降级路径）
 node test_filter.cjs             # 39 项筛选逻辑单测
 ```
 
 > 接口脚本会**自己登录拿 token**，不用手填；无 token / 假 token 的 401
 > 也在 `test_auth_api.py` 里覆盖了。
+> `test_login_security.py` 会锁一家「已驳回」店铺（别的脚本不碰它），跑完重启后端即可。
 
 浏览器端到端（真实 Chrome + CDP，需先起前后端）：
 
 ```bash
-python drive_admin_e2e.py        # 平台端 8 页，35 项断言 + 截图到 .shots-admin/
+python drive_full_flow.py        # 完整业务流程闭环，25 项断言 + 截图到 .shots-flow/
+python drive_admin_e2e.py        # 平台端 8 页，36 项断言 + 截图到 .shots-admin/
 python drive_merchant_e2e.py     # 商家端 7 页，37 项断言 + 截图到 .shots-merchant/
 python drive_client.py           # 客户端页面体检，13 项 + 截图到 .shots/
 ```
+
+> `drive_full_flow.py` 走的是**一条数据的完整生命周期**：
+> 商家验证码登录 → 发布新菜 → 平台端看到 → 客户端刷到 → 平台端下架 →
+> 客户端消失 → 商家端显示「已下架」。
+> 单页测试全绿也证明不了这条链路是通的，所以单独跑一遍。
 
 > `drive_*.py` 需要 **venv 解释器**
 > （`~/.workbuddy/binaries/python/envs/default/Scripts/python.exe`，装了 websocket-client）；
@@ -223,17 +238,19 @@ python server/tools/export_mock.py  # 幂等，可重复跑
 
 | 验证 | 结果 |
 |---|---|
+| 登录安全专项 `test_login_security.py` | **34 / 34** |
 | 鉴权 / 上传 / CORS 专项 `test_auth_api.py` | **54 / 54** |
 | 平台端接口回归 `test_admin_api.py` | **47 / 47** |
 | 商家端接口回归 `test_merchant_api.py` | **76 / 76** |
-| 平台端浏览器端到端 `drive_admin_e2e.py` | **35 / 35** |
+| 完整业务流程 `drive_full_flow.py` | **25 / 25** |
+| 平台端浏览器端到端 `drive_admin_e2e.py` | **36 / 36** |
 | 商家端浏览器端到端 `drive_merchant_e2e.py` | **37 / 37** |
 | 筛选逻辑 `test_filter.cjs` | **39 / 39** |
 | 适配层行为 `test_adapter.cjs` | **27 / 27** |
-| 后端接口冒烟 `smoke_test.py` | **24 / 24** |
+| 后端接口冒烟 `smoke_test.py` | **25 / 25** |
 | 客户端浏览器端到端 `drive_client.py` | **13 / 13** |
 
-合计 **352 项断言全绿**。
+合计 **413 项断言全绿**。
 
 **三端数据打通情况**：客户端 ✅ / 平台端 ✅ / **商家端 ✅（读 + 写全部落库）**。
 全链路已闭合：商家发布 → 平台审核管控 → 客户端可见，任一端改动静另外两端立刻能感知。
@@ -246,11 +263,21 @@ python server/tools/export_mock.py  # 幂等，可重复跑
 | **CORS 白名单** | `eatwhat.cors.allowedOrigins`，不再 `*` |
 | **真实文件上传** | `POST /api/upload`：扩展名白名单 + **魔数校验** + 尺寸上限 + 服务端 UUID 重命名，静态托管 `/uploads/**` |
 
+### 登录安全加固（已完成，v1.4）
+
+| 项 | 做法 |
+|---|---|
+| **验证码真校验** | `POST /api/auth/sms-code` 发码；客户端 / 商家端登录都走 `SmsCodeStore` 真校验。60s 重发限制、5 分钟过期、错误 5 次作废、**用后即焚**、同 IP 每小时上限 |
+| **登录防撞库** | 同账号连错 5 次锁 15 分钟（锁定期间密码正确也拒）；同 IP 每分钟尝试上限。只信 `remoteAddr`，不信 `X-Forwarded-For` |
+| **JWT 密钥外置** | 环境变量 `EATWHAT_JWT_SECRET`；prod profile 下若仍是开发默认值，服务**直接拒绝启动** |
+
 ### 已知待办
 
 - [x] ~~后端鉴权~~ ✅ 已完成（真 JWT，不再返回 mock token）
 - [x] ~~CORS 收紧~~ ✅ 已完成（白名单）
-- [x] ~~文件上传~~ ✅ 已完成（本地磁盘存储；接 OSS 见 `docs/05` 已知简化 #6）
+- [x] ~~文件上传~~ ✅ 已完成（本地磁盘存储；接 OSS 见 `docs/05` 已知简化 #5）
 - [x] ~~商家端逐页接后端~~ ✅ 已完成（读写全落库）
-- [ ] 演示密码 / 验证码仍是简化版，上线前换短信（`docs/05` 已知简化 #1、#2）
+- [x] ~~验证码形同虚设 / 登录可无限撞库 / JWT 密钥写死~~ ✅ 已完成（v1.4）
+- [ ] 接真实短信网关并关掉 `echoSmsCode`；限流计数换 Redis（现为内存实现，多实例等于没限）
+  —— `docs/05` 已知简化 #1、#3
 - [ ] 客户端仍有 1 处未确认的小问题（用户尚未说明具体现象）
