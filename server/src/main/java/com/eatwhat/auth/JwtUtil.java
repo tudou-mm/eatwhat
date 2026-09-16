@@ -38,6 +38,15 @@ public class JwtUtil {
     public static final String CLAIM_SHOP_ID = "shopId";
     public static final String CLAIM_NAME = "name";
 
+    /**
+     * 登录态版本号。签发的 token 里带着它，每次请求与库里的当前值比对。
+     *
+     * JWT 天生是「签发了就管不了」的 —— 校验只看签名和过期时间，服务端说不上话。
+     * 带上版本号之后就补上了这个短板：封店 / 改密 / 登出时把库里的值 +1，
+     * 所有旧 token 下一毫秒就作废，不用等它自然过期。
+     */
+    public static final String CLAIM_TV = "tv";
+
     /** HS256 要求密钥至少 256 bit，短了直接启动失败，别等到线上才发现 */
     private static final int MIN_SECRET_BYTES = 32;
 
@@ -81,21 +90,38 @@ public class JwtUtil {
     /**
      * 签发。
      *
-     * @param subject 主体（admin 用 a_001，商家用 m_&lt;shopId&gt;）
-     * @param role    admin / merchant / client
-     * @param shopId  商家专属，其他角色传 null
+     * @param subject      主体（admin 用 a_001，商家用 m_&lt;shopId&gt;，食客用 u_xxx）
+     * @param role         admin / merchant / client
+     * @param shopId       商家专属，其他角色传 null
+     * @param name         展示名
+     * @param tokenVersion 当前登录态版本号，见 {@link #CLAIM_TV}
      */
-    public String sign(String subject, String role, String shopId, String name) {
+    public String sign(String subject, String role, String shopId, String name, int tokenVersion) {
         long now = System.currentTimeMillis();
         var builder = Jwts.builder()
                 .subject(subject)
                 .claim(CLAIM_ROLE, role)
+                .claim(CLAIM_TV, tokenVersion)
                 .issuedAt(new Date(now))
                 .expiration(new Date(now + expireMillis));
         // 空值不塞进 payload —— 塞了会多出一对无意义的声明，也让 token 变长
         if (shopId != null) builder.claim(CLAIM_SHOP_ID, shopId);
         if (name != null) builder.claim(CLAIM_NAME, name);
         return builder.signWith(key, Jwts.SIG.HS256).compact();
+    }
+
+    /**
+     * 从 payload 里取登录态版本号。
+     * 老 token（v1.4 之前签发的）没有这个声明，一律当 0 —— 库里默认值也是 0，
+     * 所以老 token 不会因为「缺声明」被误判失效。
+     */
+    public static int tokenVersionOf(Claims claims) {
+        Object v = claims.get(CLAIM_TV);
+        if (v instanceof Number n) return n.intValue();
+        if (v != null) {
+            try { return Integer.parseInt(String.valueOf(v)); } catch (NumberFormatException ignored) { }
+        }
+        return 0;
     }
 
     /**

@@ -1,5 +1,7 @@
 package com.eatwhat.controller;
 
+import com.eatwhat.auth.AuthContext;
+import com.eatwhat.common.BizException;
 import com.eatwhat.common.R;
 import com.eatwhat.common.Views;
 import com.eatwhat.entity.Dish;
@@ -154,13 +156,27 @@ public class ClientController {
         return R.ok(commentService.listByDish(id).stream().map(views::comment).toList());
     }
 
-    /** 发表评论 */
+    /**
+     * 发表评论。
+     *
+     * ⚠️ **身份一律取自 token，不看请求体里的 userId**。
+     * 之前是直接 `body.get("userId")` 拿去用 —— 那意味着任何人把 userId 改成别人
+     * 就能以别人名义评论；被封号的用户换个 id 也照发不误，封号等于没封。
+     * 现在这个接口由 AuthInterceptor 要求 client 身份（见 {@code requiredRole}），
+     * 这里再从上下文取 subject 当下单用户。
+     *
+     * 请求体里若仍带着 userId，**直接忽略**（不报错）：老的调用方不至于因此挂掉。
+     */
     @PostMapping("/dish/{id}/comment")
     public R<Map<String, Object>> addComment(@PathVariable String id,
                                              @RequestBody Map<String, Object> body) {
-        String userId = String.valueOf(body.get("userId"));
+        AuthContext.Principal me = AuthContext.get();
+        if (me == null || !"client".equals(me.role()) || me.subject() == null) {
+            throw new BizException(401, "请先登录后再发表评论");
+        }
         String content = body.get("content") == null ? "" : body.get("content").toString();
-        return R.ok(views.comment(commentService.add(id, userId, content)));
+        // CommentService.add 里还有一道封号校验，两处都不能省
+        return R.ok(views.comment(commentService.add(id, me.subject(), content)));
     }
 
     /** 点赞 / 收藏 / 打卡 */

@@ -105,6 +105,7 @@ localStorage.setItem('useApi', '1'); location.reload();
 
 ```bash
 cd server/tools
+python test_session_api.py       # 38 项会话作废 / 封店封号即时生效 / 登出专项（7 组）
 python test_login_security.py    # 34 项登录防撞库 / 验证码专项（6 组）
 python test_auth_api.py          # 54 项鉴权 / 上传 / CORS 专项（5 组）
 python test_admin_api.py         # 47 项平台端接口回归（11 组）
@@ -116,7 +117,9 @@ node test_filter.cjs             # 39 项筛选逻辑单测
 
 > 接口脚本会**自己登录拿 token**，不用手填；无 token / 假 token 的 401
 > 也在 `test_auth_api.py` 里覆盖了。
-> `test_login_security.py` 会锁一家「已驳回」店铺（别的脚本不碰它），跑完重启后端即可。
+> ⚠️ 只有 `smoke_test.py` 吃端口参数，其余不要传 —— 传了会被当成 URL 拼进去报错。
+> `test_login_security.py` 会锁一家「已驳回」店铺，`test_session_api.py` 会封店 / 禁言 / 封号，
+> 跑完重启后端即可复原。
 
 浏览器端到端（真实 Chrome + CDP，需先起前后端）：
 
@@ -238,6 +241,7 @@ python server/tools/export_mock.py  # 幂等，可重复跑
 
 | 验证 | 结果 |
 |---|---|
+| 会话作废专项 `test_session_api.py` | **38 / 38** |
 | 登录安全专项 `test_login_security.py` | **34 / 34** |
 | 鉴权 / 上传 / CORS 专项 `test_auth_api.py` | **54 / 54** |
 | 平台端接口回归 `test_admin_api.py` | **47 / 47** |
@@ -250,7 +254,7 @@ python server/tools/export_mock.py  # 幂等，可重复跑
 | 后端接口冒烟 `smoke_test.py` | **25 / 25** |
 | 客户端浏览器端到端 `drive_client.py` | **13 / 13** |
 
-合计 **413 项断言全绿**。
+合计 **451 项断言全绿**。
 
 **三端数据打通情况**：客户端 ✅ / 平台端 ✅ / **商家端 ✅（读 + 写全部落库）**。
 全链路已闭合：商家发布 → 平台审核管控 → 客户端可见，任一端改动静另外两端立刻能感知。
@@ -271,6 +275,19 @@ python server/tools/export_mock.py  # 幂等，可重复跑
 | **登录防撞库** | 同账号连错 5 次锁 15 分钟（锁定期间密码正确也拒）；同 IP 每分钟尝试上限。只信 `remoteAddr`，不信 `X-Forwarded-For` |
 | **JWT 密钥外置** | 环境变量 `EATWHAT_JWT_SECRET`；prod profile 下若仍是开发默认值，服务**直接拒绝启动** |
 
+### 会话作废与状态闸门（已完成，v1.5）
+
+JWT 签发之后服务端原本管不了 —— 封了店，商家拿着旧 token 还能改资料、上下架、回评，
+一直用到 168 小时后过期。这一版补上了：
+
+| 项 | 做法 |
+|---|---|
+| **会话版本号 `tv`** | 每个可登录主体挂一个版本号写进 token；封店 / 封号 / 登出时 **+1**，旧凭证下一毫秒作废 |
+| **状态闸门** | 拦截器每请求查一次主体状态，`banned` 的店 / 用户**所有接口**一律 401（原先只有「发布」拦了） |
+| **服务端登出** | 新增 `POST /api/auth/logout`，真正作废该主体全部已签发凭证；重复调用幂等 |
+| **评论身份** | `POST /api/client/dish/{id}/comment` 的身份取自 token，不再信请求体里的 `userId` |
+| **禁言补漏** | `muted` 的店现在真的不能回评了（之前只有注释写了这条规则） |
+
 ### 已知待办
 
 - [x] ~~后端鉴权~~ ✅ 已完成（真 JWT，不再返回 mock token）
@@ -278,6 +295,7 @@ python server/tools/export_mock.py  # 幂等，可重复跑
 - [x] ~~文件上传~~ ✅ 已完成（本地磁盘存储；接 OSS 见 `docs/05` 已知简化 #5）
 - [x] ~~商家端逐页接后端~~ ✅ 已完成（读写全落库）
 - [x] ~~验证码形同虚设 / 登录可无限撞库 / JWT 密钥写死~~ ✅ 已完成（v1.4）
+- [x] ~~没有账号禁用 / 踢下线机制~~ ✅ 已完成（v1.5：版本号 + 状态闸门 + 服务端登出）
 - [ ] 接真实短信网关并关掉 `echoSmsCode`；限流计数换 Redis（现为内存实现，多实例等于没限）
   —— `docs/05` 已知简化 #1、#3
 - [ ] 客户端仍有 1 处未确认的小问题（用户尚未说明具体现象）

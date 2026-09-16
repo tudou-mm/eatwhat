@@ -72,7 +72,7 @@ public class CommonController {
         AppUser u = userService.loginByPhone(phone);
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("user", views.user(u));                 // 出参一律过 Views，不返回裸实体
-        m.put("token", jwt.sign(u.getId(), "client", null, u.getName()));
+        m.put("token", jwt.sign(u.getId(), "client", null, u.getName(), u.getTokenVersion()));
         m.put("role", "client");
         return R.ok(m);
     }

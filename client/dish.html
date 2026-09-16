@@ -439,18 +439,16 @@ function sendComment() {
   if (!v) return;
   if (!requireLogin()) return;
 
-  MOCK.comments.unshift({
-    id: 'c_' + Date.now(),
-    dishId: dish.id,
-    userId: MOCK.currentUser.id,
-    userName: MOCK.currentUser.name,
-    avatar: MOCK.currentUser.avatar,
-    content: v,
-    at: fmtNow(),
-    reply: null
-  });
+  // 走统一写入口。原先这里只往本地 MOCK.comments 里塞一条 ——
+  // 在线模式下评论根本没落库，刷新一下就没了。
+  // 现在在线时真发到后端（**身份由服务端从 token 取**，请求体不传 userId），
+  // 离线时适配层改本地内存，原型照样能演示。
+  const r = MOCK.act('client.comment', { dishId: dish.id, content: v });
+  if (!r || !r.ok) {
+    toast((r && r.msg) || '评论失败，请重试');
+    return;
+  }
 
-  dish.stats.comments += 1;
   input.value = '';
   onInput();
   renderComments();

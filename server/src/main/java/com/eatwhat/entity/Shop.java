@@ -72,6 +72,15 @@ public class Shop {
     /** 最后发布时间戳（毫秒），用于冷却判断 */
     private Long lastPublishAt;
 
+    /**
+     * 登录态版本号。签发的 JWT 里带着它，每次请求比对一次 —— 对不上就是 401。
+     *
+     * 用途：**让已经发出去的 token 立即作废**。
+     * 封店、改密码、主动登出时 +1，商家那边还没过期的旧 token 立刻就失效了。
+     * 没有它的话，封了店人家照样能用旧 token 用到 168 小时后过期为止。
+     */
+    private Integer tokenVersion = 0;
+
     private Integer statViews = 0;
     private Integer statLikes = 0;
     private Integer statFavorites = 0;
@@ -128,6 +137,8 @@ public class Shop {
     public void setDailyLimit(Integer dailyLimit) { this.dailyLimit = dailyLimit; }
     public Long getLastPublishAt() { return lastPublishAt; }
     public void setLastPublishAt(Long lastPublishAt) { this.lastPublishAt = lastPublishAt; }
+    public Integer getTokenVersion() { return tokenVersion == null ? 0 : tokenVersion; }
+    public void setTokenVersion(Integer tokenVersion) { this.tokenVersion = tokenVersion; }
     public Integer getStatViews() { return statViews; }
     public void setStatViews(Integer statViews) { this.statViews = statViews; }
     public Integer getStatLikes() { return statLikes; }

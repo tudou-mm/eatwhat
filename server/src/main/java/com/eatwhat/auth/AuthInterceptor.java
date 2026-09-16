@@ -22,11 +22,14 @@ import java.util.regex.Pattern;
  *   /api/upload/**    → admin 或 merchant 都行
  *   其余（/api/client/**、/api/auth/**、/api/login、/api/health）→ 公开
  *
- * 两个刻意的设计：
+ * 三道闸，顺序不能换：
  * 1. **角色与路径必须对应**。拿着商家 token 打平台端接口直接 403，
  *    不能靠「前端不会这么调」来兜底。
  * 2. **商家只能操作自己那家店**。这里先按 URL 里的 shopId 拦一道，
  *    Controller 再按 @AuthContext 兜一道 —— 双层，是因为漏一道就是越权。
+ * 3. **会话是否仍然有效**（{@link SessionGuard}）。签名对、没过期，
+ *    不代表还算数 —— 店可能已经被封了，token 也可能已被主动作废。
+ *    这一道必须放在最后，因为它要查库，前面能挡掉的先挡掉，少一次查询。
  */
 @Component
 public class AuthInterceptor implements HandlerInterceptor {
@@ -38,9 +41,11 @@ public class AuthInterceptor implements HandlerInterceptor {
     private static final String BEARER = "Bearer ";
 
     private final JwtUtil jwt;
+    private final SessionGuard sessionGuard;
 
-    public AuthInterceptor(JwtUtil jwt) {
+    public AuthInterceptor(JwtUtil jwt, SessionGuard sessionGuard) {
         this.jwt = jwt;
+        this.sessionGuard = sessionGuard;
     }
 
     @Override
@@ -74,6 +79,7 @@ public class AuthInterceptor implements HandlerInterceptor {
                 ? ("admin".equals(role) || "merchant".equals(role))
                 : need.equals(role);
         if (!allowed) {
+            // 这条回 403 而不是 401：身份是真的、token 也有效，只是不该走这个门
             throw new BizException(403, "无权访问该接口（需要 " + need + " 身份，当前 " + role + "）");
         }
 
@@ -83,6 +89,9 @@ public class AuthInterceptor implements HandlerInterceptor {
                 throw new BizException(403, "只能操作本店数据");
             }
         }
+
+        // 最后一道：签名对、没过期，也不代表还算数 —— 店可能已被封、token 可能已被作废
+        sessionGuard.check(role, claims.getSubject(), shopId, JwtUtil.tokenVersionOf(claims));
 
         AuthContext.set(new AuthContext.Principal(role, claims.getSubject(), shopId, name));
         return true;
@@ -100,6 +109,11 @@ public class AuthInterceptor implements HandlerInterceptor {
         if (uri.startsWith("/api/admin/")) return "admin";
         if (uri.startsWith("/api/merchant/")) return "merchant";
         if (uri.startsWith("/api/upload")) return "staff";
+        // 客户端整体是免登录浏览的，**只有发表评论必须带身份**。
+        // 原先这个接口从请求体里取 userId，等于谁都能以别人的名义评论；
+        // 被封号的用户换个 userId 也照样发 —— 封号形同虚设。
+        // 现在身份一律从 token 取，请求体里那个字段直接不看了。
+        if (uri.startsWith("/api/client/dish/") && uri.endsWith("/comment")) return "client";
         return null;
     }
 

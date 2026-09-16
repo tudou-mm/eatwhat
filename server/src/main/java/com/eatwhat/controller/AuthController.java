@@ -2,6 +2,7 @@ package com.eatwhat.controller;
 
 import com.eatwhat.auth.JwtUtil;
 import com.eatwhat.auth.LoginGuard;
+import com.eatwhat.auth.SessionGuard;
 import com.eatwhat.auth.SmsCodeStore;
 import com.eatwhat.auth.SmsSender;
 import com.eatwhat.common.BizException;
@@ -9,6 +10,7 @@ import com.eatwhat.common.R;
 import com.eatwhat.common.Views;
 import com.eatwhat.entity.Shop;
 import com.eatwhat.repository.ShopRepository;
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
@@ -45,6 +47,7 @@ public class AuthController {
     private final LoginGuard guard;
     private final SmsCodeStore smsStore;
     private final SmsSender smsSender;
+    private final SessionGuard sessionGuard;
 
     private final String adminAccount;
     private final String adminPassword;
@@ -53,6 +56,7 @@ public class AuthController {
 
     public AuthController(ShopRepository shopRepo, JwtUtil jwt, Views views,
                           LoginGuard guard, SmsCodeStore smsStore, SmsSender smsSender,
+                          SessionGuard sessionGuard,
                           @Value("${eatwhat.auth.adminAccount:admin}") String adminAccount,
                           @Value("${eatwhat.auth.adminPassword:admin123}") String adminPassword,
                           @Value("${eatwhat.auth.merchantPassword:123456}") String merchantPassword,
@@ -63,6 +67,7 @@ public class AuthController {
         this.guard = guard;
         this.smsStore = smsStore;
         this.smsSender = smsSender;
+        this.sessionGuard = sessionGuard;
         this.adminAccount = adminAccount;
         this.adminPassword = adminPassword;
         this.merchantPassword = merchantPassword;
@@ -136,13 +141,57 @@ public class AuthController {
         }
     }
 
+    /**
+     * 服务端登出：作废当前主体**已签发的全部** token。
+     *
+     * 放在 `/api/auth/**` 下是有意的 —— 这个前缀不被拦截器保护，因为
+     * 登出恰恰是「token 可能已经不作数」时最需要能调通的接口。
+     * 若要求先通过鉴权才能登出，被封店/已过期的用户就卡成「登不出去」了。
+     * 所以这里自己解 token，解不开也照回成功。
+     *
+     * 幂等：重复调用、不带 token 调用都返回 ok，前端不用做特殊分支。
+     *
+     * ⚠️ 作废的是**该主体的全部会话**，不只是当前这一个 ——
+     *    商家端一个店只有一个账号，食客端也按「一人一号」设计，所以这样做是合理的。
+     *    将来若支持「同账号多设备」，这里要改成按设备粒度作废。
+     */
+    @PostMapping("/logout")
+    public R<Map<String, Object>> logout(HttpServletRequest req) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        String token = bearer(req);
+        if (token == null) {
+            m.put("ok", true);
+            m.put("revoked", false);
+            return R.ok(m);
+        }
+        try {
+            Claims c = jwt.verify(token);
+            String role = c.get(JwtUtil.CLAIM_ROLE, String.class);
+            switch (role == null ? "" : role) {
+                case "merchant" -> sessionGuard.revokeShop(c.get(JwtUtil.CLAIM_SHOP_ID, String.class));
+                case "client" -> sessionGuard.revokeUser(c.getSubject());
+                case "admin" -> sessionGuard.revokeAdmin();
+                default -> { }
+            }
+            m.put("ok", true);
+            m.put("revoked", true);
+            m.put("role", role);
+        } catch (Exception e) {
+            // token 本来就坏了或已过期 —— 目标已经达成（这份凭证本来就再用不了）
+            m.put("ok", true);
+            m.put("revoked", false);
+            m.put("reason", "token 已无效");
+        }
+        return R.ok(m);
+    }
+
     private Map<String, Object> loginAdmin(String account, String password) {
         // 账号密码错误统一回 401，不区分「账号不存在」和「密码错」，避免被枚举
         if (!adminAccount.equals(account) || !adminPassword.equals(password)) {
             throw new BizException(401, "账号或密码不正确");
         }
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("token", jwt.sign("a_001", "admin", null, "平台运营"));
+        m.put("token", jwt.sign("a_001", "admin", null, "平台运营", sessionGuard.adminTokenVersion()));
         m.put("role", "admin");
         m.put("subject", "a_001");
         m.put("name", "平台运营");
@@ -175,12 +224,14 @@ public class AuthController {
             }
         }
 
+        // 封禁在登录口就拦住，给一句人话；就算漏进来，拦截器里 SessionGuard 还会再兜一道
         if ("banned".equals(s.getStatus())) {
             throw new BizException(403, "该店铺已被封禁，请联系平台");
         }
 
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("token", jwt.sign("m_" + s.getId(), "merchant", s.getId(), s.getName()));
+        m.put("token", jwt.sign("m_" + s.getId(), "merchant", s.getId(), s.getName(),
+                s.getTokenVersion()));
         m.put("role", "merchant");
         m.put("subject", "m_" + s.getId());
         m.put("shopId", s.getId());
@@ -189,6 +240,15 @@ public class AuthController {
         // 顺带把店铺视图带上，登录页可以直接显示「XX 小馆 · 审核中」
         m.put("shop", views.shop(s));
         return m;
+    }
+
+    /** 从 Authorization 头里抠出裸 token，没有就返回 null */
+    private static String bearer(HttpServletRequest req) {
+        String h = req.getHeader("Authorization");
+        if (h == null) return null;
+        String v = h.trim();
+        if (v.regionMatches(true, 0, "Bearer ", 0, 7)) v = v.substring(7).trim();
+        return v.isEmpty() ? null : v;
     }
 
     private static String str(Object o) {

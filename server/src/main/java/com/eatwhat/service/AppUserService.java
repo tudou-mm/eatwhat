@@ -57,7 +57,13 @@ public class AppUserService {
             throw new BizException("非法的状态值");
         }
         AppUser u = get(id);
+        String before = u.getStatus();
         u.setStatus(status);
+        // 封号时作废已签发的 token：否则被封的人拿着旧 token
+        // 还能继续刷接口，直到 168 小时后它自己过期
+        if ("banned".equals(status) && !"banned".equals(before)) {
+            u.setTokenVersion(u.getTokenVersion() + 1);
+        }
         repo.save(u);
         return u;
     }

@@ -457,6 +457,9 @@ function toLogin() {
 function toLogout() {
   if (!MOCK.currentUser.loggedIn) { toLogin(); return; }
   if (confirm('确定退出登录？')) {
+    // 不只是把本地标志翻成 false —— 还要通知服务端作废这份凭证，
+    // 否则 token 还在有效期内，抄走照样能用
+    if (MOCK.logout) MOCK.logout();
     MOCK.currentUser.loggedIn = false;
     render();
     toast('已退出登录');

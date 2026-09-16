@@ -130,10 +130,17 @@ public class ShopService {
         return repo.save(s);
     }
 
-    /** 封店：客户端彻底下架 */
+    /**
+     * 封店：客户端彻底下架，且**立刻踢掉商家手上那张 token**。
+     *
+     * 版本号 +1 是关键一步。不 +1 的话，封店只挡住「新登录」，
+     * 商家在封店前领到的那张 token 还能继续用来改资料、上下架菜品，
+     * 一直用到 168 小时后自然过期 —— 等于封了个寂寞。
+     */
     public Shop ban(String id) {
         Shop s = get(id);
         s.setStatus("banned");
+        s.setTokenVersion(s.getTokenVersion() + 1);
         return repo.save(s);
     }
 

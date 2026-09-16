@@ -105,6 +105,7 @@
    */
   function tokenKey(role) { return 'eatwhat_token_' + (role || END); }
   function roleKey(role) { return 'eatwhat_token_role_' + (role || END); }
+  function userKey(role) { return 'eatwhat_user_' + (role || END); }
 
   function getToken(role) {
     try { return localStorage.getItem(tokenKey(role)); } catch (e) { return null; }
@@ -114,11 +115,14 @@
     try { return localStorage.getItem(roleKey(role)); } catch (e) { return null; }
   }
 
-  /** 记下这次登录。**只存 token，不存密码** —— 密码留在 localStorage 里是隐患 */
+  /** 记下这次登录。**只存 token 和用户展示信息，不存密码** —— 密码留在 localStorage 里是隐患 */
   function saveSession(role, data) {
     try {
       localStorage.setItem(tokenKey(role), data.token);
       localStorage.setItem(roleKey(role), role);
+      // 客户端要把服务端返回的用户带上：评论这类写操作的身份**由服务端从 token 取**，
+      // 但页面渲染（头像 / 昵称）还需要它，否则只能拿 mock 里的假身份去显示
+      if (data.user) localStorage.setItem(userKey(role), JSON.stringify(data.user));
       if (role === 'merchant' && data.shopId) {
         localStorage.setItem('merchantShopId', data.shopId);
       }
@@ -130,7 +134,102 @@
     try {
       localStorage.removeItem(tokenKey(role));
       localStorage.removeItem(roleKey(role));
+      localStorage.removeItem(userKey(role));
     } catch (e) { /* 同上 */ }
+  }
+
+  /**
+   * 把已登录的客户端用户还原进 MOCK.currentUser。
+   *
+   * 原先客户端的「当前用户」只是 mock.js 里一个演示对象，登录页把
+   * `loggedIn` 翻成 true 就算登进去了 —— 服务端完全不知道来的是谁。
+   * 而且登录页写的 `localStorage.loggedIn` **没有任何地方读**，
+   * 所以一翻页登录态就丢，发评论又让你去登录。
+   *
+   * 现在两路都还原：优先用服务端返回的真实用户，其次退回离线演示标志。
+   */
+  function hydrateCurrentUser() {
+    if (END !== 'client' || !window.MOCK || !window.MOCK.currentUser) return;
+    var cu = window.MOCK.currentUser;
+
+    var raw = null;
+    try { raw = localStorage.getItem(userKey('client')); } catch (e) { raw = null; }
+    if (raw) {
+      try {
+        var u = JSON.parse(raw);
+        if (u && u.id) {
+          cu.id = u.id;
+          if (u.name) cu.name = u.name;
+          if (u.avatar) cu.avatar = u.avatar;
+          cu.loggedIn = true;
+          return;
+        }
+      } catch (e) { /* 存的东西坏了，往下走离线分支 */ }
+    }
+
+    // 离线演示：没接后端时登录页只落了一个标志，把它认下来
+    try {
+      if (localStorage.getItem('loggedIn') === '1') cu.loggedIn = true;
+    } catch (e) { /* 忽略 */ }
+  }
+
+  /**
+   * 登出。**先通知服务端，再清本地**，顺序不能反。
+   *
+   * 只清 localStorage 是不够的 —— token 本身还在有效期内（168 小时），
+   * 谁把这份字符串抄走都还能接着用。服务端登出会把该主体已签发的凭证**真正作废**
+   * （版本号 +1），旧 token 下一毫秒就对不上号了。
+   *
+   * 两条兜底：
+   * - 离线模式没有服务端可通知，退化成只清本地；
+   * - 服务端调不通也照样清本地 —— 登出**必须永远成功**，
+   *   不能因为网络抽风把人留在登录态里出不去。
+   */
+  function logout(role) {
+    var r = role || END;
+    if (enabled) {
+      try {
+        if (getToken(r)) syncRequest('POST', '/auth/logout', {});
+      } catch (e) {
+        console.warn('[api] 服务端登出未成功，已只清本地会话：' + e.message);
+      }
+    }
+    clearSession(r);
+    // 客户端还有个离线演示标志要一起清，否则登出后翻页又"登录"回来了
+    if (r === 'client') {
+      try { localStorage.removeItem('loggedIn'); } catch (e) { /* 忽略 */ }
+      if (window.MOCK && window.MOCK.currentUser) window.MOCK.currentUser.loggedIn = false;
+    }
+  }
+
+  /**
+   * 给后台端（平台 / 商家）侧栏挂一个「退出登录」入口。
+   *
+   * 为什么不改页面：侧栏是**各页内联复制**的，平台端 9 页 + 商家端 8 页，
+   * 逐个加容易漏、以后新增页面还会忘。注入只有一处，新页面自动带上。
+   *
+   * 客户端不挂 —— 客户端的退出在「我的」页里，入口位置不一样。
+   */
+  function mountLogoutEntry() {
+    if (END === 'client' || typeof document === 'undefined') return;
+    var nav = document.querySelector('.sidebar__nav');
+    if (!nav || nav.querySelector('[data-logout]')) return;
+
+    var a = document.createElement('a');
+    a.className = 'nav-item';
+    a.href = 'javascript:void(0)';
+    a.setAttribute('data-logout', '1');
+    a.textContent = '退出登录';
+    // 跟上面的菜单拉开距离，免得被当成又一个功能项
+    a.style.marginTop = '18px';
+    a.style.borderTop = '1px solid rgba(128,128,128,.18)';
+    a.style.paddingTop = '14px';
+    a.onclick = function () {
+      if (!confirm('确定退出登录？\n\n退出后这份登录凭证会在服务端立即作废，需要重新登录。')) return;
+      logout();
+      location.replace('login.html');
+    };
+    nav.appendChild(a);
   }
 
   /** 解出 payload 看 exp。解不开就当过期 —— 宁可多登一次，也别拿着坏 token 一直撞 401 */
@@ -250,7 +349,12 @@
     }
     if (xhr.status < 200 || xhr.status >= 300) {
       // 优先把后端的业务提示抛出去（「发布太频繁」比「HTTP 400」有用得多）
-      throw new Error((j && j.msg) || ('HTTP ' + xhr.status));
+      var err = new Error((j && j.msg) || ('HTTP ' + xhr.status));
+      // 打上状态码标记：上层必须能区分「后端没起来」和「这份凭证不作数了」——
+      // 前者该降级到假数据保住原型可看，后者**绝不能降级**（那等于给被封的人看演示数据）
+      err.httpStatus = xhr.status;
+      err.authFailed = (xhr.status === 401);
+      throw err;
     }
     if (!j) throw new Error('接口返回的不是 JSON');
     if (j.code !== 0) throw new Error(j.msg || '接口返回异常');
@@ -452,6 +556,19 @@
         cache.pendingShops.length, cache.reports.length, Date.now() - t0);
       return true;
     } catch (e) {
+      // 401 = 这份凭证不作数了（被封店 / 已登出 / 版本号对不上）。
+      // 跟「后端没起来」是两回事，处理方式也必须相反：
+      // 后端没起来 → 降级到假数据，保住原型能打开；
+      // 凭证失效   → **绝不能降级**，否则被封的商家会看到一屏演示数据，
+      //              以为一切正常，还在那儿点着玩。
+      if (e && e.authFailed && END !== 'client') {
+        console.warn('[api] 凭证已失效：' + e.message);
+        try { sessionStorage.setItem('eatwhat_login_reason', e.message); } catch (ignore) { }
+        if (typeof location !== 'undefined' && location.replace) {
+          location.replace('login.html');
+        }
+        return false;
+      }
       console.warn('[api] 后端未就绪，已降级到本地假数据：' + e.message);
       enabled = false;
       cache.loaded = false;
@@ -533,7 +650,7 @@
 
     // ---- 登录态 / 上传 ----
     login: login,
-    logout: clearSession,
+    logout: logout,
     sendSmsCode: sendSmsCode,
     token: getToken,
     role: getTokenRole,
@@ -694,6 +811,45 @@
   }
 
   var ACTIONS = {
+
+    // ---------- 客户端 ----------
+    /*
+     * 发表评论。
+     *
+     * ⚠️ 请求体里**不再传 userId** —— 身份由服务端从 token 取。
+     * 以前是把 userId 塞进 body，等于谁改一下这个字段就能以别人的名义评论。
+     */
+    'client.comment': {
+      path: function (p) { return '/client/dish/' + p.dishId + '/comment'; },
+      body: function (p) { return { content: p.content }; },
+      local: function (p) {
+        // 离线：本地造一条，原型仍然能演示「评论发出去、马上出现在列表里」
+        var M = window.MOCK;
+        var cu = (M && M.currentUser) || {};
+        var c = {
+          id: 'c_' + Date.now(),
+          dishId: p.dishId,
+          userId: cu.id,
+          userName: cu.name,
+          avatar: cu.avatar,
+          content: p.content,
+          at: nowStr(),
+          reply: null
+        };
+        upsert(M.comments, c);
+        var d = findDish(p.dishId);
+        if (d && d.stats) d.stats.comments = (d.stats.comments || 0) + 1;
+        return true;
+      },
+      apply: function (data) {
+        // 服务端回的是权威评论视图（含它生成的 id 与时间），直接并进池子，
+        // 让 getDishComments / MOCK.comments 都能看到
+        upsert(cache.comments, data);
+        if (window.MOCK) upsert(window.MOCK.comments, data);
+        var d = findDish(data.dishId);
+        if (d && d.stats) d.stats.comments = (d.stats.comments || 0) + 1;
+      }
+    },
 
     // ---------- 商家审核 ----------
     'audit.approve': {
@@ -1245,11 +1401,14 @@
   function install() {
     if (!window.MOCK) return;
 
+    hydrateCurrentUser();                    // 还原客户端登录态（必须在页面脚本前生效）
+
     window.MOCK.act = act;
     window.MOCK.isOnline = online;
     window.MOCK.preloadSync = preloadSync;   // 页面手动刷新用（如商家端审核页）
     window.MOCK.login = login;               // 登录页用
-    window.MOCK.logout = clearSession;
+    window.MOCK.logout = logout;             // 会通知服务端作废凭证，不只是清 localStorage
+    window.MOCK.clearSession = clearSession;  // 只想清本地（如 401 兜底）时才用这个
     window.MOCK.sendSmsCode = sendSmsCode;    // 「获取验证码」按钮用
     window.MOCK.upload = upload;             // 选图 / 选视频后传这里
     window.MOCK.isLoggedIn = API.isLoggedIn;
@@ -1276,6 +1435,13 @@
   var IS_LOGIN_PAGE = /login\.html$/i.test(location.pathname || '');
   if (enabled && !IS_LOGIN_PAGE) preloadSync();
   install();
+
+  // 退出登录入口：侧栏是各页内联的，这里统一注入，避免逐页改
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', mountLogoutEntry);
+  } else {
+    mountLogoutEntry();
+  }
 
   // 若 mock.js 尚未加载完，DOM 就绪后再补一次
   if (!window.MOCK) {

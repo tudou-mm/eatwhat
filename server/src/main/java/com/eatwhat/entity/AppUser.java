@@ -34,6 +34,12 @@ public class AppUser {
     /** 注册日期 */
     private String at;
 
+    /**
+     * 登录态版本号。签发 JWT 时写进 payload，每次请求比对 —— 对不上就是 401。
+     * 封号 / 主动登出时 +1，让已经发出去、还没过期的 token 立即失效。
+     */
+    private Integer tokenVersion = 0;
+
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
     public String getName() { return name; }
@@ -54,4 +60,6 @@ public class AppUser {
     public void setReportCount(Integer reportCount) { this.reportCount = reportCount; }
     public String getAt() { return at; }
     public void setAt(String at) { this.at = at; }
+    public Integer getTokenVersion() { return tokenVersion == null ? 0 : tokenVersion; }
+    public void setTokenVersion(Integer tokenVersion) { this.tokenVersion = tokenVersion; }
 }
