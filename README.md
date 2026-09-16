@@ -63,7 +63,8 @@ mvn spring-boot:run          # 需要 JDK 17 + Maven
 
 ```
 http://127.0.0.1:5173/client/feed.html?api=1
-http://127.0.0.1:5173/admin/login.html?api=1     # 平台端入口，演示账号 admin / admin123
+http://127.0.0.1:5173/admin/login.html?api=1     # 平台端入口
+http://127.0.0.1:5173/merchant/login.html?api=1  # 商家端入口
 ```
 
 切回假数据用 `?api=0`。也可以走控制台：
@@ -71,6 +72,21 @@ http://127.0.0.1:5173/admin/login.html?api=1     # 平台端入口，演示账�
 ```js
 localStorage.setItem('useApi', '1'); location.reload();
 ```
+
+### 登录账号（仅演示）
+
+| 端 | 账号 | 密码 |
+|---|---|---|
+| 平台端 | `admin` | `admin123` |
+| 商家端 | 店铺 ID（如 `s_001`）**或**店内电话 `13800138000` | `123456` |
+| 客户端 | 任意手机号（自动注册） | 任意 6 位验证码 |
+
+登录后走 **JWT（HS256）**，之后所有请求带 `Authorization: Bearer <token>`；
+`/api/admin/**` 要 admin、`/api/merchant/**` 要 merchant（且只能碰自己那家店）、
+`/api/upload` 要 admin 或 merchant。适配层自动带 token，**遇到 401 会引回登录页**。
+
+> 演示密码是**硬编码的简化**，上线前必须换成手机号 + 短信验证码，
+> 详见 `docs/05` 的「已知简化」。
 
 适配层 `assets/js/api.js` 保持了与 `mock.js` 完全相同的**同步**函数签名，
 所以**三端页面接入后端时一行代码都不用改**。后端没启动会自动降级回假数据。
@@ -82,17 +98,21 @@ localStorage.setItem('useApi', '1'); location.reload();
 
 ```bash
 cd server/tools
-python test_admin_api.py         # 45 项平台端接口回归（11 组）
-python test_merchant_api.py      # 71 项商家端接口回归（12 组）
-python smoke_test.py 8080        # 21 项后端接口冒烟
+python test_auth_api.py          # 54 项鉴权 / 上传 / CORS 专项（5 组）
+python test_admin_api.py         # 47 项平台端接口回归（11 组）
+python test_merchant_api.py      # 76 项商家端接口回归（12 组）
+python smoke_test.py 8080        # 24 项后端接口冒烟
 node test_adapter.cjs            # 27 项适配层行为测试（含后端挂掉的降级路径）
 node test_filter.cjs             # 39 项筛选逻辑单测
 ```
 
+> 接口脚本会**自己登录拿 token**，不用手填；无 token / 假 token 的 401
+> 也在 `test_auth_api.py` 里覆盖了。
+
 浏览器端到端（真实 Chrome + CDP，需先起前后端）：
 
 ```bash
-python drive_admin_e2e.py        # 平台端 8 页，31 项断言 + 截图到 .shots-admin/
+python drive_admin_e2e.py        # 平台端 8 页，35 项断言 + 截图到 .shots-admin/
 python drive_merchant_e2e.py     # 商家端 7 页，37 项断言 + 截图到 .shots-merchant/
 python drive_client.py           # 客户端页面体检，13 项 + 截图到 .shots/
 ```
@@ -190,7 +210,9 @@ python server/tools/export_mock.py  # 幂等，可重复跑
 |---|---|
 | 前端 | 纯 HTML + CSS + 原生 JS（无框架、无构建） |
 | 后端 | Java 17 · Spring Boot 3.2 · JPA · Lombok |
+| 鉴权 | JWT HS256（jjwt 0.12）· 拦截器 + ThreadLocal 身份上下文 |
 | 数据库 | H2（默认，免安装）/ MySQL 8（可切换） |
+| 文件存储 | 本地磁盘 `server/uploads/`（已在 `.gitignore`），可换 OSS |
 | 视觉 | 参考抖音，客户端深色沉浸，后台浅色常规 |
 
 ---
@@ -201,24 +223,34 @@ python server/tools/export_mock.py  # 幂等，可重复跑
 
 | 验证 | 结果 |
 |---|---|
-| 平台端接口回归 `test_admin_api.py` | **45 / 45** |
-| 商家端接口回归 `test_merchant_api.py` | **71 / 71** |
-| 平台端浏览器端到端 `drive_admin_e2e.py` | **31 / 31** |
+| 鉴权 / 上传 / CORS 专项 `test_auth_api.py` | **54 / 54** |
+| 平台端接口回归 `test_admin_api.py` | **47 / 47** |
+| 商家端接口回归 `test_merchant_api.py` | **76 / 76** |
+| 平台端浏览器端到端 `drive_admin_e2e.py` | **35 / 35** |
 | 商家端浏览器端到端 `drive_merchant_e2e.py` | **37 / 37** |
 | 筛选逻辑 `test_filter.cjs` | **39 / 39** |
 | 适配层行为 `test_adapter.cjs` | **27 / 27** |
-| 后端接口冒烟 `smoke_test.py` | **21 / 21** |
+| 后端接口冒烟 `smoke_test.py` | **24 / 24** |
 | 客户端浏览器端到端 `drive_client.py` | **13 / 13** |
 
-合计 **239 项断言全绿**。
+合计 **352 项断言全绿**。
 
 **三端数据打通情况**：客户端 ✅ / 平台端 ✅ / **商家端 ✅（读 + 写全部落库）**。
 全链路已闭合：商家发布 → 平台审核管控 → 客户端可见，任一端改动静另外两端立刻能感知。
 
+### 上线前加固（已完成）
+
+| 项 | 做法 |
+|---|---|
+| **JWT 鉴权** | HS256，`/api/admin/**`、`/api/merchant/**`、`/api/upload` 全部要 token；商家按 token 里的 shopId 隔离，URL 层 + 业务层双保险 |
+| **CORS 白名单** | `eatwhat.cors.allowedOrigins`，不再 `*` |
+| **真实文件上传** | `POST /api/upload`：扩展名白名单 + **魔数校验** + 尺寸上限 + 服务端 UUID 重命名，静态托管 `/uploads/**` |
+
 ### 已知待办
 
-- [ ] 后端鉴权（当前登录返回 mock token，需补 JWT；商家身份暂存 `localStorage`）
-- [ ] 文件上传（`media` 目前由前端直接传 URL，需接 OSS）
-- [ ] CORS 收紧（当前开发期全放开）
+- [x] ~~后端鉴权~~ ✅ 已完成（真 JWT，不再返回 mock token）
+- [x] ~~CORS 收紧~~ ✅ 已完成（白名单）
+- [x] ~~文件上传~~ ✅ 已完成（本地磁盘存储；接 OSS 见 `docs/05` 已知简化 #6）
 - [x] ~~商家端逐页接后端~~ ✅ 已完成（读写全落库）
+- [ ] 演示密码 / 验证码仍是简化版，上线前换短信（`docs/05` 已知简化 #1、#2）
 - [ ] 客户端仍有 1 处未确认的小问题（用户尚未说明具体现象）

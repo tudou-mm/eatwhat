@@ -32,15 +32,37 @@ BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8080").rstrip("/
 PASS = FAIL = 0
 FAILURES = []
 
+# 商家端接口全部需要 merchant token（见 server 的 AuthInterceptor）
+TOKEN = None
+DEMO_PASSWORD = "123456"
 
-def call(method, path, body=None):
-    """返回 (ok, data_or_msg)"""
+
+def login(account, role="merchant", password=None):
+    """
+    登录拿 JWT。商家 account 可以是店铺 id，也可以是店内电话。
+    不写全局 TOKEN —— 主流程要先以 admin 身份读店铺清单、
+    再以商家身份跑用例，由调用方决定当前用哪张。
+    """
+    ok, d = call("POST", "/api/auth/login",
+                 {"role": role, "account": account,
+                  "password": password if password is not None else DEMO_PASSWORD},
+                 auth=False)
+    if not ok:
+        raise SystemExit("登录失败（%s / %s）：%s" % (role, account, d))
+    return d["token"]
+
+
+def call(method, path, body=None, auth=True, token=None):
+    """返回 (ok, data_or_msg)。auth=False 时不带 token（用于测鉴权本身）"""
     url = BASE + path
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Accept", "application/json")
     if data:
         req.add_header("Content-Type", "application/json")
+    tk = token if token is not None else (TOKEN if auth else None)
+    if tk:
+        req.add_header("Authorization", "Bearer " + tk)
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
             j = json.loads(r.read().decode("utf-8"))
@@ -69,10 +91,17 @@ def check(name, cond, detail=""):
 
 
 def main():
+    global TOKEN
     print("== 商家端接口测试  %s ==" % BASE)
 
-    # ---------- 0. 准备：从平台端拿全量店铺，挑出各类测试对象 ----------
-    ok, admin = call("GET", "/api/admin/bootstrap")
+    # ---------- 0-a. 鉴权：没 token 必须进不来 ----------
+    print("\n[0] 鉴权")
+    ok, msg = call("GET", "/api/merchant/bootstrap?shopId=s_001", auth=False)
+    check("无 token 打商家端被 401 拦下", (not ok) and "未登录" in str(msg), str(msg)[:80])
+
+    # ---------- 0-b. 准备：以 admin 身份读店铺清单，挑出各类测试对象 ----------
+    admin_tok = login("admin", role="admin", password="admin123")
+    ok, admin = call("GET", "/api/admin/bootstrap", token=admin_tok)
     if not ok:
         print("  后端不可用：%s" % admin)
         return
@@ -96,6 +125,17 @@ def main():
         return
     print("  测试店：%s (%s)" % (target["name"], target["id"]))
     SID = target["id"]
+
+    # 换成商家身份：后面的接口都带这张 token，且只能操作 SID 这一家
+    TOKEN = login(SID)
+    check("以测试店身份登录成功", bool(TOKEN))
+
+    # 越权：拿本店 token 去读别家店，必须 403
+    other = next((s["id"] for s in normal if s["id"] != SID), None)
+    if other:
+        ok, msg = call("GET", "/api/merchant/bootstrap?shopId=" + other)
+        check("拿本店 token 读别家店被 403 拦下",
+              (not ok) and ("本店" in str(msg) or "无权" in str(msg)), str(msg)[:80])
 
     # ---------- 1. bootstrap 结构 ----------
     print("\n[1] /merchant/bootstrap 结构")
@@ -129,12 +169,17 @@ def main():
     print("\n[3] 待审核店也能 bootstrap（客户端接口做不到这点）")
     if pendings:
         pid = pendings[0]["id"]
+        # 换成这家待审核店的身份再读 —— 拿 s_001 的 token 读别家店会 403（那是对的）
+        prev = TOKEN
+        TOKEN = login(pid)
+        check("待审核店也能登录（否则进不了自己的后台）", bool(TOKEN))
         ok, pd = call("GET", "/api/merchant/bootstrap?shopId=" + pid)
         check("pending 店 bootstrap 成功", ok, str(pd))
         if ok:
             check("返回的正是 pending 状态", pd["shop"]["status"] == "pending",
                   "得到 %s" % pd["shop"].get("status"))
             check("pending 店菜品为空", len(pd["dishes"]) == 0)
+        TOKEN = prev
         ok, cd = call("GET", "/api/client/bootstrap")
         in_client = pid in [s["id"] for s in cd["shops"]] if ok else False
         check("pending 店不在客户端可见列表", not in_client)
@@ -145,6 +190,11 @@ def main():
     print("\n[4] 发布冷却拦截")
     if cooldown:
         cs = cooldown[0]
+        # 同样要换成「处于冷却中的那家店」的身份。
+        # 拿 SID 的 token 去发 cs 的菜不会 403 —— 服务端会把 shopId 强制改成 SID，
+        # 结果变成「往自己店发了一条」，把 SID 也拖进冷却，后面的用例全崩。
+        prev = TOKEN
+        TOKEN = login(cs["id"])
         ok, r = call("POST", "/api/merchant/dish", {
             "shopId": cs["id"], "name": "冷却测试菜", "type": "image",
             "media": ["https://picsum.photos/seed/cooldown/800/1200"], "price": 30
@@ -152,6 +202,7 @@ def main():
         check("冷却中的店发布被拒", not ok, "居然成功了")
         check("拒绝原因可读（提到小时/上限）",
               (not ok) and any(w in str(r) for w in ["小时", "上限", "等待"]), str(r))
+        TOKEN = prev
     else:
         print("  (跳过：没有处于冷却中的店)")
 
@@ -326,9 +377,17 @@ def main():
               "前 %d / 后 %d" % (n_before, len(cd_after["shops"]) if ok else -1))
 
         ok, bp = call("GET", "/api/merchant/bootstrap?shopId=" + new_id)
+        check("新店不能拿别家 token 看自己的状态（越权会被 403）",
+              (not ok) and ("本店" in str(bp) or "无权" in str(bp)), str(bp)[:80])
+        # 换成新店自己的身份，才应该看得到自己的审核状态
+        prev = TOKEN
+        TOKEN = login(new_id)
+        ok, bp = call("GET", "/api/merchant/bootstrap?shopId=" + new_id)
         check("新店自己能看自己的审核状态", ok and bp["shop"]["status"] == "pending")
+        TOKEN = prev
 
-        ok, ad = call("GET", "/api/admin/bootstrap")
+        admin_tok = login("admin", role="admin", password="admin123")
+        ok, ad = call("GET", "/api/admin/bootstrap", token=admin_tok)
         check("平台端待审核队列里出现这家店",
               ok and any(s["id"] == new_id for s in ad["pendingShops"]))
 

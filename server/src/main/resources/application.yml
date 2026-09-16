@@ -20,10 +20,45 @@ spring:
     console:
       enabled: true
       path: /h2-console
+  servlet:
+    multipart:
+      # 冻结规则：视频 ≤20MB。上限留点余量给 multipart 包头，
+      # 真正的业务校验在 UploadController 里按 config 精确卡。
+      max-file-size: 24MB
+      max-request-size: 32MB
 
 # 首次启动灌演示数据
 eatwhat:
   seed: true
+
+  # ---------- 鉴权 ----------
+  auth:
+    # 演示用超管账号。⚠️ 上线必须改，或用环境变量覆盖
+    adminAccount: admin
+    adminPassword: admin123
+    # 商家端原型阶段的统一密码（真实系统应走短信验证码，见 docs/05）
+    merchantPassword: "123456"
+
+  # ---------- JWT ----------
+  jwt:
+    # ⚠️ 上线必须换成随机长串，可用环境变量 EATWHAT_JWT__SECRET 覆盖
+    secret: "eatwhat-dev-only-secret-please-change-in-production-8f3a2b1c9d"
+    expireHours: 168
+
+  # ---------- 文件上传 ----------
+  upload:
+    # 落盘目录，相对 server/ 运行目录
+    dir: ./uploads
+    # 对外访问前缀（WebConfig 会把它映射到上面的磁盘目录）
+    publicPath: /uploads
+    maxImageMb: 5
+    maxVideoMb: 20
+
+  # ---------- 跨域白名单 ----------
+  # 逗号分隔（Spring 会按 , 切成数组）。支持通配写法，如 http://localhost:[*]。
+  # file:// 直开时 Origin 为 null 会被拦，那种场景请走 `python dev.py`。
+  cors:
+    allowedOrigins: "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080"
 
 logging:
   level:

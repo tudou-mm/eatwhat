@@ -128,6 +128,24 @@ def find_chrome():
     raise SystemExit("找不到 Chrome/Edge")
 
 
+ADMIN_TOKEN = None
+
+
+def login_token(role="admin", account="admin", password="admin123"):
+    """拿一张 JWT。api_data() 要用它读后端权威数据（接口现在要鉴权了）。"""
+    global ADMIN_TOKEN
+    base = os.environ.get("EAT_API_BASE", "http://127.0.0.1:8080")
+    payload = json.dumps({"role": role, "account": account, "password": password}).encode()
+    req = urllib.request.Request(base + "/api/auth/login", data=payload, method="POST",
+                                headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        j = json.loads(r.read().decode("utf-8"))
+    if j.get("code") != 0:
+        raise SystemExit("登录失败：%s" % j.get("msg"))
+    ADMIN_TOKEN = j["data"]["token"]
+    return ADMIN_TOKEN
+
+
 def api_data(path):
     """直接问后端要权威数据，用来和 DOM 里显示的值对比。
 
@@ -136,7 +154,10 @@ def api_data(path):
     改成「页面显示 == 后端返回」之后，断言才真正在验证页面接对了后端。
     """
     base = os.environ.get("EAT_API_BASE", "http://127.0.0.1:8080")
-    with urllib.request.urlopen(base + "/api" + path, timeout=10) as r:
+    req = urllib.request.Request(base + "/api" + path)
+    if ADMIN_TOKEN:
+        req.add_header("Authorization", "Bearer " + ADMIN_TOKEN)
+    with urllib.request.urlopen(req, timeout=10) as r:
         j = json.loads(r.read().decode("utf-8"))
     if j.get("code") != 0:
         raise SystemExit("后端 %s 返回异常：%s" % (path, j.get("msg")))
@@ -177,6 +198,43 @@ def main():
                  {"width": 1440, "height": 900, "deviceScaleFactor": 1, "mobile": False})
 
         print("== 平台端浏览器端到端  %s ==" % FRONT)
+
+        # ---------- 0. 登录 ----------
+        # 后端模式下 /api/admin/** 全要 JWT，页面没 token 会降级回本地假数据，
+        # 后面所有「页面显示 == 后端返回」的断言都会假红。所以先真登录一次。
+        print("\n[0] 登录页真实登录")
+        login_token()
+
+        cdp.open("%s/admin/login.html?api=1" % FRONT)
+        cdp.eval("""(function(){
+          document.getElementById('account').value = 'admin';
+          document.getElementById('password').value = 'wrong-pass';
+          document.getElementById('submit').click();
+          return true; })()""")
+        time.sleep(0.5)
+        err_txt = cdp.eval("document.getElementById('err').textContent")
+        check("密码错误留在登录页并提示", bool(err_txt) and "不正确" in str(err_txt),
+              "err=%r" % err_txt)
+        check("密码错误时没有落盘 token",
+              not cdp.eval("localStorage.getItem('eatwhat_token')"))
+
+        cdp.open("%s/admin/login.html?api=1" % FRONT)
+        cdp.eval("""(function(){
+          document.getElementById('account').value = 'admin';
+          document.getElementById('password').value = 'admin123';
+          document.getElementById('submit').click();
+          return true; })()""")
+        end = time.time() + 12
+        while time.time() < end:
+            if cdp.eval("location.pathname.indexOf('dashboard') >= 0"):
+                break
+            time.sleep(0.3)
+        check("登录成功后跳到工作台",
+              bool(cdp.eval("location.pathname.indexOf('dashboard') >= 0")),
+              str(cdp.eval("location.href")))
+        tok = cdp.eval("localStorage.getItem('eatwhat_token')")
+        check("token 已落盘且是真 JWT（三段式）",
+              bool(tok) and str(tok).count(".") == 2, "token=%s" % str(tok)[:24])
 
         # ---------- 1. 数据概览 ----------
         print("\n[1] 数据概览 KPI 来自后端")

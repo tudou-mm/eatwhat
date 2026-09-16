@@ -91,7 +91,7 @@
 
     <div class="hint">
       <b>演示账号</b>：admin ／ admin123<br>
-      当前为原型演示，登录只做前端校验，尚未接入真实鉴权。
+      后端模式（?api=1）下已接入真实 JWT 鉴权；本地假数据模式仍只做前端校验。
     </div>
   </div>
 
@@ -99,11 +99,17 @@
   <div class="mode" id="mode"></div>
 </div>
 
+<script src="../assets/data/mock.js"></script>
+<script src="../assets/js/api.js"></script>
 <script>
 /*
  * 平台端独立入口。
  * 跳转时必须把 ?api=1 带上，否则登录进去会掉回本地假数据模式 ——
  * 运营看到的数据和刚才测试的不是一套，会很迷惑。
+ *
+ * 后端模式下这里是**真登录**：调 /api/auth/login 拿 JWT 并落盘，
+ * 后续页面靠它访问 /api/admin/**。拿不到 token 就不放行 ——
+ * 否则进去了也是一片空数据（dashboard 会 401 降级回本地假数据）。
  */
 (function () {
   var qs = new URLSearchParams(location.search);
@@ -124,7 +130,21 @@
     err.textContent = '';
 
     if (!a || !p) { err.textContent = '请输入账号和密码'; return; }
-    if (a !== 'admin' || p !== 'admin123') { err.textContent = '账号或密码不正确'; return; }
+
+    if (useApi) {
+      // 连后端 → 走真登录，拿不到 JWT 就不放行
+      if (!window.MOCK || typeof MOCK.login !== 'function') {
+        err.textContent = '适配层未就绪，请刷新页面重试'; return;
+      }
+      try {
+        MOCK.login('admin', a, p);
+      } catch (e) {
+        err.textContent = e.message || '登录失败';
+        return;
+      }
+    } else if (a !== 'admin' || p !== 'admin123') {
+      err.textContent = '账号或密码不正确'; return;
+    }
 
     var url = 'dashboard.html' + (useApi ? '?api=1' : '');
     location.href = url;

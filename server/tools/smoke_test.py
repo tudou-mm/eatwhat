@@ -11,6 +11,12 @@ BASE = 'http://127.0.0.1:%s' % PORT
 
 PASS, FAIL = [], []
 
+# 鉴权后需要 token：平台端和商家端各一张（角色不能混用）
+ADMIN_TOKEN = None
+MERCHANT_TOKEN = None
+DEMO_ADMIN = ('admin', 'admin123')
+DEMO_MERCHANT = ('13800138000', '123456')
+
 
 def wait_ready(timeout=120):
     t0 = time.time()
@@ -24,11 +30,21 @@ def wait_ready(timeout=120):
     return False
 
 
+def token_for(path):
+    if path.startswith('/api/admin'):
+        return ADMIN_TOKEN
+    if path.startswith('/api/merchant'):
+        return MERCHANT_TOKEN
+    return None
+
+
 def call(method, path, body=None):
     data = json.dumps(body).encode('utf-8') if body is not None else None
-    req = urllib.request.Request(
-        BASE + path, data=data, method=method,
-        headers={'Content-Type': 'application/json; charset=utf-8'})
+    headers = {'Content-Type': 'application/json; charset=utf-8'}
+    tok = token_for(path)
+    if tok:
+        headers['Authorization'] = 'Bearer ' + tok
+    req = urllib.request.Request(BASE + path, data=data, method=method, headers=headers)
     try:
         r = urllib.request.urlopen(req, timeout=20)
         raw = r.read().decode('utf-8', 'replace')
@@ -40,6 +56,16 @@ def call(method, path, body=None):
         return e.code, e.read().decode('utf-8', 'replace')[:200]
     except Exception as e:
         return -1, str(e)[:160]
+
+
+def login(role, account, password):
+    """登录拿 token。失败直接退出 —— 后面所有断言都会连带失败，没必要跑。"""
+    st, j = call('POST', '/api/auth/login',
+                 {'role': role, 'account': account, 'password': password})
+    if st != 200 or not isinstance(j, dict) or j.get('code') != 0:
+        print('登录失败（%s/%s）：http=%s %s' % (role, account, st, j), flush=True)
+        sys.exit(3)
+    return j['data']['token']
 
 
 def brief(data):
@@ -84,13 +110,49 @@ def check(label, method, path, body=None, expect_code=0, want=None):
     return data
 
 
+def check_unauth(label, path, bad_token=None):
+    """**不带** token（或带一个假 token）打受保护接口，必须被 401 拦下。
+
+    不能复用 check()：那个会按路径自动补 token，就测不出鉴权本身。
+    """
+    headers = {'Content-Type': 'application/json; charset=utf-8'}
+    if bad_token:
+        headers['Authorization'] = 'Bearer ' + bad_token
+    req = urllib.request.Request(BASE + path, method='GET', headers=headers)
+    try:
+        r = urllib.request.urlopen(req, timeout=10)
+        st, body = r.status, r.read().decode('utf-8', 'replace')
+    except urllib.error.HTTPError as e:
+        st, body = e.code, e.read().decode('utf-8', 'replace')[:200]
+    except Exception as e:
+        st, body = -1, str(e)[:160]
+
+    ok = (st == 401)
+    line = '%-46s http=%-3s %s' % ('GET ' + path, st, body[:70])
+    if ok:
+        PASS.append(label)
+        print('  [OK]   ' + line, flush=True)
+    else:
+        FAIL.append(label)
+        print('  [FAIL] ' + line, flush=True)
+
+
 print('等待服务就绪 %s ...' % BASE, flush=True)
 if not wait_ready():
     print('服务在 120s 内未就绪，放弃。', flush=True)
     sys.exit(2)
 print('服务已就绪。开始测试。\n', flush=True)
 
-print('--- 1. 通用 ---')
+print('--- 0. 鉴权 ---')
+ADMIN_TOKEN = login('admin', *DEMO_ADMIN)
+MERCHANT_TOKEN = login('merchant', *DEMO_MERCHANT)
+print('  已拿到 admin / merchant 两张 token', flush=True)
+check_unauth('无 token 打平台端应 401', '/api/admin/overview')
+check_unauth('无 token 打商家端应 401', '/api/merchant/dashboard/s_001')
+check_unauth('伪造 token 应 401', '/api/admin/overview',
+             bad_token='eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJoYWNrZXIifQ.forged')
+
+print('\n--- 1. 通用 ---')
 check('health', 'GET', '/api/health')
 check('client config', 'GET', '/api/client/config',
       want=lambda d: (isinstance(d, dict) and d.get('priceTiers'), '价格档 %d 个' % len(d.get('priceTiers') or [])))

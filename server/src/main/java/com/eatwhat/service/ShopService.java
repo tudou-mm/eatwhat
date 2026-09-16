@@ -220,6 +220,10 @@ public class ShopService {
         if (name == null || name.isBlank()) throw new BizException("请填写店铺名称");
         String phone = str(body.get("phone"));
         if (phone == null || phone.isBlank()) throw new BizException("请填写联系电话");
+        // 同一个电话不要反复堆待审核记录 —— 入驻接口是公开的，这是最低限度的防刷
+        if (repo.existsByPhoneAndStatus(phone, "pending")) {
+            throw new BizException(400, "该手机号已有一条待审核的入驻申请，请等待平台处理");
+        }
 
         Map<String, Object> rule = configService.publishRule();
 

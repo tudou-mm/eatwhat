@@ -136,6 +136,8 @@
       <div class="card__title">门头与图片</div>
     </div>
     <div class="card__body">
+      <input type="file" id="coverInput" accept="image/*" hidden onchange="onCoverPicked(event)">
+      <input type="file" id="photoInput" accept="image/*" multiple hidden onchange="onPhotoPicked(event)">
       <div class="field">
         <div class="field__label">门头图 <span class="field__required">*</span></div>
         <div class="cover-up" id="coverUp" onclick="addCover()">
@@ -222,9 +224,19 @@ let photos = [];
 })();
 
 function addCover() {
-  coverImg = 'https://picsum.photos/seed/newcover' + Date.now() + '/400/300';
-  const el = document.getElementById('coverUp');
-  el.innerHTML = `<img src="${coverImg}"><div class="up-ph__del" onclick="event.stopPropagation();removeCover()">×</div>`;
+  document.getElementById('coverInput').click();
+}
+
+function onCoverPicked(ev) {
+  const f = (ev.target.files || [])[0];
+  ev.target.value = '';
+  if (!f) return;
+  if (!f.type.startsWith('image/')) { toast('门头照必须是图片'); return; }
+  MOCK.upload(f).then(r => {
+    coverImg = r.url;
+    const el = document.getElementById('coverUp');
+    el.innerHTML = `<img src="${coverImg}"><div class="up-ph__del" onclick="event.stopPropagation();removeCover()">×</div>`;
+  }).catch(e => toast('上传失败：' + e.message));
 }
 
 function removeCover() {
@@ -235,8 +247,20 @@ function removeCover() {
 
 function addPhoto() {
   if (photos.length >= 6) { toast('最多 6 张'); return; }
-  photos.push('https://picsum.photos/seed/newph' + Date.now() + Math.random().toString(36).slice(2,5) + '/300/300');
-  renderPhotos();
+  document.getElementById('photoInput').click();
+}
+
+function onPhotoPicked(ev) {
+  const files = Array.from(ev.target.files || []);
+  ev.target.value = '';
+  if (!files.length) return;
+  const room = 6 - photos.length;
+  const list = files.slice(0, room);
+  if (files.length > room) toast('最多 6 张，已忽略多余的 ' + (files.length - room) + ' 张');
+  Promise.all(list.map(f => MOCK.upload(f)
+      .then(r => r.url)
+      .catch(e => { toast('「' + f.name + '」上传失败：' + e.message); return null; })))
+    .then(urls => { urls.filter(Boolean).forEach(u => photos.push(u)); renderPhotos(); });
 }
 
 function renderPhotos() {
@@ -296,8 +320,12 @@ function submitApply() {
 
   if (!r.ok) { toast('提交失败：' + (r.msg || '未知错误')); return; }
 
-  // 给 audit 页留一份兜底数据：后端没接上时它读不到服务端结果
+  // 给 audit 页留一份兜底数据：后端没接上时它读不到服务端结果。
+  // 同时记下后端生成的店铺 id —— 平台端「商家审核」里看到的就是这一条。
+  // 注意不写 merchantShopId：此刻申请人还没有登录凭证，
+  // 写了会让商家端各页去拉一家自己没权限的店。
   sessionStorage.setItem('applying', JSON.stringify(r.data || {}));
+  if (r.data && r.data.id) sessionStorage.setItem('pendingShopId', r.data.id);
   location.href = 'audit.html';
 }
 

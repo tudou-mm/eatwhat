@@ -24,20 +24,41 @@ BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8080").rstrip("/
 PASS = FAIL = 0
 FAILURES = []
 
+# 平台端接口全部需要 admin token（见 server 的 AuthInterceptor）
+ADMIN_TOKEN = None
 
-def call(method, path, body=None):
-    """返回 (ok, data_or_msg)"""
+
+def login(role="admin", account="admin", password="admin123"):
+    """先登录拿 JWT。拿不到就别往下跑了 —— 后面每条都会 401。"""
+    global ADMIN_TOKEN
+    ok, d = call("POST", "/api/auth/login",
+                 {"role": role, "account": account, "password": password}, auth=False)
+    if not ok:
+        raise SystemExit("登录失败（%s）：%s" % (account, d))
+    ADMIN_TOKEN = d["token"]
+    return d
+
+
+def call(method, path, body=None, auth=True):
+    """返回 (ok, data_or_msg)。auth=False 时不带 token（用于测鉴权本身）"""
     url = BASE + path
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Accept", "application/json")
     if data:
         req.add_header("Content-Type", "application/json")
+    if auth and ADMIN_TOKEN:
+        req.add_header("Authorization", "Bearer " + ADMIN_TOKEN)
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
             j = json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        return False, "HTTP %s" % e.code
+        # 后端的业务提示在 body 里，别丢掉 —— 只回 "HTTP 400" 什么都看不出来
+        try:
+            j = json.loads(e.read().decode("utf-8"))
+            return False, j.get("msg") or ("HTTP %s" % e.code)
+        except Exception:
+            return False, "HTTP %s" % e.code
     except Exception as e:
         return False, str(e)
     if j.get("code") != 0:
@@ -58,6 +79,14 @@ def check(name, cond, detail=""):
 
 def main():
     print("== 平台端接口测试  %s ==" % BASE)
+
+    # ---------- 0. 鉴权 ----------
+    print("\n[0] 鉴权")
+    ok, d = call("GET", "/api/admin/bootstrap", auth=False)
+    check("无 token 打平台端被 401 拦下",
+          (not ok) and "未登录" in str(d), str(d)[:80])
+    login()
+    check("拿 admin token 后能读到 bootstrap", True)
 
     # ---------- 1. 聚合接口结构 ----------
     print("\n[1] /admin/bootstrap 结构")

@@ -140,6 +140,10 @@ public class DishService {
         d.setType(type);
         d.setMedia(toJson(media));
         d.setCover(str(body.get("cover")) != null ? str(body.get("cover")) : media.get(0));
+        // 视频菜品：media 里放的是封面图，真视频单独存
+        if ("video".equals(type)) {
+            d.setVideoUrl(str(body.get("videoUrl")));
+        }
         d.setPrice(price);
 
         // 价格自动归档 —— 商家不可手选

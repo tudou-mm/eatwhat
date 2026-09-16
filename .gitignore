@@ -54,6 +54,10 @@ logs/
 *.sqlite3
 server/data/
 
+# ---------- 用户上传的媒体（POST /api/upload 落盘到这里，不进仓库） ----------
+server/uploads/
+uploads/
+
 # ---------- Node（如果以后加前端构建） ----------
 node_modules/
 dist/

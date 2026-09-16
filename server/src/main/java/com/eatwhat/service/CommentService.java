@@ -59,6 +59,12 @@ public class CommentService {
         return c;
     }
 
+    /** 取单条评论（越权校验要先拿到它才知道属于哪道菜） */
+    public Comment get(String commentId) {
+        return repo.findById(commentId)
+                .orElseThrow(() -> new BizException(404, "评论不存在"));
+    }
+
     /** 商家回评 */
     public Comment reply(String commentId, String content) {
         Comment c = repo.findById(commentId)

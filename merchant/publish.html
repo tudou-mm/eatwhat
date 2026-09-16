@@ -206,40 +206,46 @@
                 <div class="card__subtitle" id="mediaCount">已选 0 / 9</div>
               </div>
               <div class="card__body">
+                <!-- 真实文件选择：隐藏起来，由下面的「+」按钮触发 -->
+                <input type="file" id="imgInput" accept="image/*" multiple hidden onchange="onImagesPicked(event)">
+                <input type="file" id="videoInput" accept="video/*" hidden onchange="onVideoPicked(event)">
+                <input type="file" id="coverInput" accept="image/*" hidden onchange="onCoverPicked(event)">
+
                 <!-- 图文 -->
                 <div id="imageUploader">
                   <div class="uploader" id="upGrid">
-                    <div class="up-add" onclick="addImage()">
+                    <div class="up-add" onclick="pickImages()">
                       <div class="up-add__plus">+</div>
                       <div class="up-add__txt">添加图片</div>
                     </div>
                   </div>
-                  <div class="field__hint">第一张自动作为封面 · 支持拖拽排序 · 单张建议 3:4 竖图</div>
+                  <div class="field__hint">第一张自动作为封面 · 支持拖拽排序 · 单张建议 3:4 竖图（≤5MB）</div>
                 </div>
 
                 <!-- 视频 -->
                 <div id="videoUploader" class="hidden">
-                  <div class="up-video" onclick="mockVideo()">
+                  <div class="up-video" onclick="pickVideo()">
                     <div class="up-video__icon">⬆</div>
                     <div>点击上传视频</div>
                     <div class="text-12">≤ 15 秒 · ≤ 20MB · MP4</div>
                   </div>
                   <div id="videoPreview" class="mt-12 hidden">
                     <div class="flex items-center gap-10">
-                      <div style="width:60px;height:80px;border-radius:6px;background:#111;overflow:hidden">
-                        <img src="https://picsum.photos/seed/videoframe/120/160" style="width:100%;height:100%;object-fit:cover">
+                      <div style="width:60px;height:80px;border-radius:6px;background:#111;overflow:hidden"
+                           id="videoThumb">
+                        <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#888;font-size:18px">▶</div>
                       </div>
                       <div class="flex-1">
-                        <div class="text-13 fw-500">dish_video.mp4</div>
-                        <div class="text-12 text-3 mt-4">12.4 MB · 00:14</div>
+                        <div class="text-13 fw-500" id="videoFileName">—</div>
+                        <div class="text-12 text-3 mt-4" id="videoFileMeta">—</div>
                       </div>
-                      <button class="btn btn--sm btn--ghost">更换</button>
+                      <button class="btn btn--sm btn--ghost" onclick="pickVideo()">更换</button>
                     </div>
                     <div class="mt-12">
                       <div class="field__label" style="font-weight:400">
                         视频封面 <span class="text-3 text-12">（选填，不上传则取首帧）</span>
                       </div>
-                      <div class="up-add" style="width:70px;height:92px;aspect-ratio:auto" onclick="mockVideoCover()">
+                      <div class="up-add" style="width:70px;height:92px;aspect-ratio:auto" onclick="pickCover()">
                         <div class="up-add__plus">+</div>
                         <div class="up-add__txt">加封面</div>
                       </div>
@@ -483,13 +489,34 @@ function pickType(type) {
   setStep(2);
 }
 
-/* ---------- 图片上传（模拟） ---------- */
-function addImage() {
-  if (S.images.length >= 9) return;
-  const seed = 'up' + Date.now() + Math.random().toString(36).slice(2, 6);
-  S.images.push('https://picsum.photos/seed/' + seed + '/800/1067');
-  renderMedia(); render();
-  if (S.images.length === 1) setStep(2);
+/* ---------- 图片上传（真实上传，离线自动降级为 dataURL） ---------- */
+function pickImages() {
+  if (S.images.length >= 9) { toast('最多 9 张'); return; }
+  document.getElementById('imgInput').click();
+}
+
+function mb(bytes) { return (bytes / 1024 / 1024).toFixed(1) + 'MB'; }
+
+async function onImagesPicked(ev) {
+  const files = Array.from(ev.target.files || []);
+  ev.target.value = '';                       // 清空，否则同一张图第二次选不上
+  if (!files.length) return;
+
+  const room = 9 - S.images.length;
+  const list = files.slice(0, room);
+  if (files.length > room) toast('最多 9 张，已忽略多余的 ' + (files.length - room) + ' 张');
+
+  for (const f of list) {
+    if (!f.type.startsWith('image/')) { toast('「' + f.name + '」不是图片'); continue; }
+    try {
+      const r = await MOCK.upload(f);
+      S.images.push(r.url);
+      renderMedia(); render();
+    } catch (e) {
+      toast('上传失败：' + e.message);
+    }
+  }
+  if (S.images.length) setStep(2);
 }
 
 function delImage(i) {
@@ -497,20 +524,71 @@ function delImage(i) {
   renderMedia(); render();
 }
 
-/* ---------- 视频上传（模拟） ---------- */
-function mockVideo() {
-  S.video = { name: 'dish_video.mp4', size: '12.4 MB', duration: '00:14' };
-  document.getElementById('videoPreview').classList.remove('hidden');
-  document.querySelector('#videoUploader .up-video').classList.add('hidden');
-  render();
+/* ---------- 视频上传（真实上传） ---------- */
+function pickVideo() { document.getElementById('videoInput').click(); }
+function pickCover() { document.getElementById('coverInput').click(); }
+
+/** 读视频时长（秒）。读不出返回 null，交给服务端兜底 */
+function videoDuration(file) {
+  return new Promise(resolve => {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement('video');
+    v.preload = 'metadata';
+    v.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(v.duration); };
+    v.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    v.src = url;
+  });
 }
 
-function mockVideoCover() {
-  S.videoCover = 'https://picsum.photos/seed/vcover' + Date.now() + '/200/260';
-  document.getElementById('videoCoverPreview').innerHTML =
-    '<div class="up-item" style="width:70px;height:92px;aspect-ratio:auto;margin-top:8px;position:relative">' +
-    '<img src="' + S.videoCover + '">' +
-    '</div>';
+function fmtDur(sec) {
+  if (sec == null) return '--';
+  const s = Math.round(sec);
+  return '00:' + String(s).padStart(2, '0');
+}
+
+async function onVideoPicked(ev) {
+  const f = (ev.target.files || [])[0];
+  ev.target.value = '';
+  if (!f) return;
+  if (!f.type.startsWith('video/')) { toast('请选择视频文件'); return; }
+
+  // 冻结规则：视频 ≤15 秒 ≤20MB。前端先拦一道，用户不用等上传完才被拒
+  if (f.size > 20 * 1024 * 1024) {
+    toast('视频不能超过 20MB（当前 ' + mb(f.size) + '）'); return;
+  }
+  const dur = await videoDuration(f);
+  if (dur != null && dur > 15.5) {
+    toast('视频不能超过 15 秒（当前 ' + dur.toFixed(1) + ' 秒）'); return;
+  }
+
+  try {
+    const r = await MOCK.upload(f);
+    S.video = { name: f.name, size: mb(f.size), duration: fmtDur(dur), url: r.url };
+    document.getElementById('videoFileName').textContent = f.name;
+    document.getElementById('videoFileMeta').textContent = mb(f.size) + ' · ' + fmtDur(dur);
+    document.getElementById('videoPreview').classList.remove('hidden');
+    document.querySelector('#videoUploader .up-video').classList.add('hidden');
+    render();
+  } catch (e) {
+    toast('上传失败：' + e.message);
+  }
+}
+
+async function onCoverPicked(ev) {
+  const f = (ev.target.files || [])[0];
+  ev.target.value = '';
+  if (!f) return;
+  if (!f.type.startsWith('image/')) { toast('封面必须是图片'); return; }
+  try {
+    const r = await MOCK.upload(f);
+    S.videoCover = r.url;
+    document.getElementById('videoCoverPreview').innerHTML =
+      '<div class="up-item" style="width:70px;height:92px;aspect-ratio:auto;margin-top:8px;position:relative">' +
+      '<img src="' + S.videoCover + '">' +
+      '</div>';
+  } catch (e) {
+    toast('上传失败：' + e.message);
+  }
 }
 
 /* ---------- 渲染媒体区 ---------- */
@@ -525,7 +603,7 @@ function renderMedia() {
             '</div>';
   });
   if (S.images.length < 9) {
-    html += '<div class="up-add" onclick="addImage()">' +
+    html += '<div class="up-add" onclick="pickImages()">' +
               '<div class="up-add__plus">+</div>' +
               '<div class="up-add__txt">添加图片</div>' +
             '</div>';
@@ -661,6 +739,9 @@ function doSubmit() {
   document.getElementById('confirmModal').classList.remove('is-open');
 
   const priceRaw = document.getElementById('dishPrice').value.trim();
+  // 图文：media 就是这组图
+  // 视频：media 只放**封面图**（客户端画廊把 media 当 <img> 渲染），
+  //       真视频通过 videoUrl 单独提交。没传封面时先用占位图顶上。
   const media = S.type === 'image'
     ? S.images.slice()
     : [S.videoCover || ('https://picsum.photos/seed/vp' + Date.now() + '/800/1200')];
@@ -673,6 +754,7 @@ function doSubmit() {
     type: S.type,
     media: media,
     cover: media[0],
+    videoUrl: (S.type === 'video' && S.video) ? S.video.url : null,
     price: priceRaw === '' ? null : Number(priceRaw),
     tasteTags: S.tastes.slice()
   });

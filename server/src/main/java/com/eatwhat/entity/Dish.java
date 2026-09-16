@@ -32,6 +32,16 @@ public class Dish {
     @Column(length = 500)
     private String cover;
 
+    /**
+     * 视频菜品的真实视频地址（type=video 时才有）。
+     *
+     * 为什么不直接塞进 media：客户端的图片画廊是把 media 每一项当 &lt;img&gt; 渲染的，
+     * 放一个 .mp4 进去就是一堆裂图。video 类型的 media 存的是**封面图**，
+     * 真视频单独放这里。客户端播放视频的能力还没做（见 docs/00 已知缺口）。
+     */
+    @Column(length = 500)
+    private String videoUrl;
+
     private Double price;
 
     /** 系统按 price 自动归档出来的档位 id，商家不可手选 */
@@ -75,6 +85,9 @@ public class Dish {
     public void setMedia(String media) { this.media = media; }
     public String getCover() { return cover; }
     public void setCover(String cover) { this.cover = cover; }
+
+    public String getVideoUrl() { return videoUrl; }
+    public void setVideoUrl(String videoUrl) { this.videoUrl = videoUrl; }
     public Double getPrice() { return price; }
     public void setPrice(Double price) { this.price = price; }
     public String getPriceTierId() { return priceTierId; }

@@ -64,6 +64,24 @@ def check(name, cond, detail=""):
         print("  [FAIL] %s   %s" % (name, detail))
 
 
+MERCHANT_TOKEN = None
+
+
+def login_token(account, password="123456", role="merchant"):
+    """拿一张商家 JWT。api_data() 要用它读后端权威数据（接口现在要鉴权了）。"""
+    global MERCHANT_TOKEN
+    base = os.environ.get("EAT_API_BASE", "http://127.0.0.1:8080")
+    payload = json.dumps({"role": role, "account": account, "password": password}).encode()
+    req = urllib.request.Request(base + "/api/auth/login", data=payload, method="POST",
+                                headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        j = json.loads(r.read().decode("utf-8"))
+    if j.get("code") != 0:
+        raise SystemExit("商家登录失败（%s）：%s" % (account, j.get("msg")))
+    MERCHANT_TOKEN = j["data"]["token"]
+    return MERCHANT_TOKEN
+
+
 def api_data(path):
     """直接问后端要权威数据，用来和 DOM 里显示的值对比。
 
@@ -71,7 +89,10 @@ def api_data(path):
     断言「页面显示 == 后端返回」才真正在验证页面接对了后端。
     """
     base = os.environ.get("EAT_API_BASE", "http://127.0.0.1:8080")
-    with urllib.request.urlopen(base + "/api" + path, timeout=10) as r:
+    req = urllib.request.Request(base + "/api" + path)
+    if MERCHANT_TOKEN:
+        req.add_header("Authorization", "Bearer " + MERCHANT_TOKEN)
+    with urllib.request.urlopen(req, timeout=10) as r:
         j = json.loads(r.read().decode("utf-8"))
     if j.get("code") != 0:
         raise SystemExit("后端 %s 返回异常：%s" % (path, j.get("msg")))
@@ -182,6 +203,7 @@ def main():
 
         print("== 商家端浏览器端到端  %s ==" % FRONT)
 
+        login_token(DEMO_SHOP)
         BACK = api_data("/merchant/bootstrap?shopId=" + DEMO_SHOP)
         SHOP = BACK["shop"]
         n_dishes = len(BACK["dishes"])

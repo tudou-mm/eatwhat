@@ -179,13 +179,31 @@ function switchTab(tab) {
 
 function doLogin() {
   const acct = document.getElementById('acct').value.trim();
-  if (!/^1\d{10}$/.test(acct)) { toast('请输入正确的手机号'); return; }
-  if (!acct.startsWith('138')) {
-    toast('原型中只有 13800138000 已通过审核');
+  const pwd = document.getElementById('pwd').value.trim();
+  if (!acct) { toast('请输入手机号或店铺号'); return; }
+  if (!pwd) { toast('请输入密码'); return; }
+
+  // 后端模式：真登录拿 JWT，并把「我是哪家店」一起落盘。
+  // 注意判断的是 isEnabled（开关是否打开）而不是 isOnline（数据是否已加载）——
+  // 登录页刻意跳过了预加载，isOnline 必然是 false。
+  const apiOn = window.EAT_API && EAT_API.isEnabled && EAT_API.isEnabled();
+  if (apiOn && typeof MOCK.login === 'function') {
+    try {
+      const d = MOCK.login('merchant', acct, pwd);
+      try {
+        localStorage.setItem('merchantAccount', acct);
+        if (d && d.shopId) localStorage.setItem('merchantShopId', d.shopId);
+      } catch (e) { /* 隐私模式，忽略 */ }
+      toast('登录成功 · ' + (d && d.name ? d.name : ''));
+      setTimeout(() => location.href = 'dashboard.html?api=1', 700);
+    } catch (e) {
+      toast(e.message || '登录失败');
+    }
+    return;
   }
 
-  // 记下「我是哪家店」—— 商家端各页据此取自己的数据。
-  // 原型阶段不做真鉴权（见 docs/05），这里只是把身份落个地方。
+  // 本地假数据模式：沿用演示身份
+  if (!/^1\d{10}$/.test(acct)) { toast('请输入正确的手机号'); return; }
   const shopId = (MOCK.currentMerchant && MOCK.currentMerchant.shopId) || 's_001';
   try {
     localStorage.setItem('merchantShopId', shopId);

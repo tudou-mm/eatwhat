@@ -1,5 +1,6 @@
 package com.eatwhat.controller;
 
+import com.eatwhat.auth.AuthContext;
 import com.eatwhat.common.BizException;
 import com.eatwhat.common.R;
 import com.eatwhat.common.Views;
@@ -16,6 +17,10 @@ import java.util.*;
  *
  * 出参一律过 {@link Views} —— 前端读嵌套（shop.stats.views），
  * 实体是扁平（statViews），直接返回实体不报错但页面静默空白。
+ *
+ * 关于归属校验：{@link com.eatwhat.auth.AuthInterceptor} 已经按 URL 里的
+ * shopId 拦了一道，这里再按「菜/评论实际属于哪家店」拦第二道。
+ * 两层是有意的 —— 前者拦不住 POST body 里的店铺 ID，后者拦不住还没取到对象的场景。
  */
 @RestController
 @RequestMapping("/api/merchant")
@@ -72,7 +77,13 @@ public class MerchantController {
         return R.ok(m);
     }
 
-    /** 入驻申请：落成一家待审核店铺（客户端在有审核通过前看不到它） */
+    /**
+     * 入驻申请：落成一家待审核店铺（客户端在审核通过前看不到它）。
+     *
+     * 这是**唯一一个公开的商家接口**（WebConfig 里排除了鉴权）——
+     * 申请的人此刻还没有账号，拦掉就成了「想入驻先登录」。
+     * 代价是没有防刷，上线前要加图形验证码或频控。
+     */
     @PostMapping("/apply")
     public R<Map<String, Object>> apply(@RequestBody Map<String, Object> body) {
         Shop s = shopService.createPending(body);
@@ -82,6 +93,7 @@ public class MerchantController {
     /** 工作台：店铺状态 + 冷却剩余秒数 + 今日数据 */
     @GetMapping("/dashboard/{shopId}")
     public R<Map<String, Object>> dashboard(@PathVariable String shopId) {
+        AuthContext.assertSelf(shopId);
         Shop s = shopService.get(shopId);
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("shop", views.shop(s));
@@ -96,6 +108,7 @@ public class MerchantController {
     /** 发布前校验：能不能发、还差多久 */
     @GetMapping("/can-publish/{shopId}")
     public R<Map<String, Object>> canPublish(@PathVariable String shopId) {
+        AuthContext.assertSelf(shopId);
         Shop s = shopService.get(shopId);
         Map<String, Object> m = new LinkedHashMap<>();
         long remain = dishService.remainingCooldownSeconds(s);
@@ -108,6 +121,10 @@ public class MerchantController {
     /** 发布菜品 */
     @PostMapping("/dish")
     public R<Map<String, Object>> publish(@RequestBody Map<String, Object> body) {
+        // 发到哪家店一律以 token 为准，**不接受请求体指定** ——
+        // 否则改一个 shopId 就能往别家店发内容
+        String me = AuthContext.shopId();
+        if (me != null) body.put("shopId", me);
         return R.ok(views.dish(dishService.publish(body)));
     }
 
@@ -115,6 +132,7 @@ public class MerchantController {
     @PutMapping("/dish/{id}")
     public R<Map<String, Object>> update(@PathVariable String id,
                                          @RequestBody Map<String, Object> body) {
+        ownDish(id);
         return R.ok(views.dish(dishService.update(id, body)));
     }
 
@@ -137,23 +155,49 @@ public class MerchantController {
 
     /** 改菜品状态的公共部分：先校验归属，防止商家动别家的菜 */
     private Dish setOwnDishStatus(String id, Map<String, Object> body, String status) {
-        Dish d = dishService.get(id);
-        String shopId = body == null ? null : String.valueOf(body.get("shopId"));
-        if (shopId != null && !"null".equals(shopId) && !shopId.equals(d.getShopId())) {
+        Dish d = ownDish(id);
+        String claimed = body == null ? null : String.valueOf(body.get("shopId"));
+        if (claimed != null && !"null".equals(claimed) && !claimed.isBlank()
+                && !claimed.equals(d.getShopId())) {
             throw new BizException(403, "只能操作本店的菜品");
         }
         return dishService.setStatus(id, status);
     }
 
+    /** 取出这道菜，并确认它属于当前登录的店 */
+    private Dish ownDish(String id) {
+        Dish d = dishService.get(id);
+        String me = AuthContext.shopId();
+        if (me != null && !me.equals(d.getShopId())) {
+            throw new BizException(403, "只能操作本店的菜品");
+        }
+        return d;
+    }
+
+    /** 这条评论挂在的菜，必须是我家的 */
+    private Comment ownComment(String id) {
+        Comment c = commentService.get(id);
+        String me = AuthContext.shopId();
+        if (me != null) {
+            Dish d = dishService.get(c.getDishId());
+            if (!me.equals(d.getShopId())) {
+                throw new BizException(403, "只能回复本店菜品的评论");
+            }
+        }
+        return c;
+    }
+
     /** 我的菜品列表（含已下架） */
     @GetMapping("/dishes/{shopId}")
     public R<List<Map<String, Object>>> dishes(@PathVariable String shopId) {
+        AuthContext.assertSelf(shopId);
         return R.ok(views.dishes(dishService.listByShop(shopId)));
     }
 
     /** 店铺信息 */
     @GetMapping("/shop/{shopId}")
     public R<Map<String, Object>> shop(@PathVariable String shopId) {
+        AuthContext.assertSelf(shopId);
         return R.ok(views.shop(shopService.get(shopId)));
     }
 
@@ -161,6 +205,7 @@ public class MerchantController {
     @PutMapping("/shop/{shopId}")
     public R<Map<String, Object>> updateShop(@PathVariable String shopId,
                                              @RequestBody Map<String, Object> body) {
+        AuthContext.assertSelf(shopId);
         Shop s = shopService.get(shopId);
         if (body.get("name") != null) s.setName(body.get("name").toString());
         if (body.get("cuisine") != null) s.setCuisine(body.get("cuisine").toString());
@@ -176,6 +221,7 @@ public class MerchantController {
     /** 我的评论（该店所有菜品下的评论） */
     @GetMapping("/comments/{shopId}")
     public R<List<Map<String, Object>>> comments(@PathVariable String shopId) {
+        AuthContext.assertSelf(shopId);
         return R.ok(shopComments(shopId));
     }
 
@@ -183,12 +229,14 @@ public class MerchantController {
     @PostMapping("/comment/{id}/reply")
     public R<Map<String, Object>> reply(@PathVariable String id,
                                         @RequestBody Map<String, Object> body) {
+        ownComment(id);
         return R.ok(views.comment(commentService.reply(id, String.valueOf(body.get("content")))));
     }
 
     /** 清除回评 */
     @DeleteMapping("/comment/{id}/reply")
     public R<Map<String, Object>> clearReply(@PathVariable String id) {
+        ownComment(id);
         return R.ok(views.comment(commentService.clearReply(id)));
     }
 

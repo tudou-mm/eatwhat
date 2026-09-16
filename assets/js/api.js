@@ -56,8 +56,9 @@
 
   /**
    * 商家身份：当前登录的是哪家店。
-   * 登录后写入 localStorage（原型阶段不做真鉴权，见 docs/05 的说明）；
-   * 没有就回退到 mock 里的演示账号。
+   * 授权以 JWT 里的 shopId 为准（服务端会强制覆盖 body 里的值），
+   * 这里读 localStorage 只是为了「刷新页面后知道该拉哪家店」，
+   * 拉不到就回退到 mock 里的演示账号。
    */
   function merchantShopId() {
     var id = null;
@@ -89,24 +90,163 @@
 
   // ================= 同步请求（见文首说明） =================
 
-  function syncRequest(method, path, body) {
+  // ================= 登录态（JWT） =================
+
+  var TOKEN_KEY = 'eatwhat_token';
+  var ROLE_KEY = 'eatwhat_token_role';
+
+  function getToken() {
+    try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return null; }
+  }
+
+  function getTokenRole() {
+    try { return localStorage.getItem(ROLE_KEY); } catch (e) { return null; }
+  }
+
+  /** 记下这次登录。**只存 token，不存密码** —— 密码留在 localStorage 里是隐患 */
+  function saveSession(role, data) {
+    try {
+      localStorage.setItem(TOKEN_KEY, data.token);
+      localStorage.setItem(ROLE_KEY, role);
+      if (role === 'merchant' && data.shopId) {
+        localStorage.setItem('merchantShopId', data.shopId);
+      }
+    } catch (e) { /* 隐私模式下写不进去，忽略 */ }
+  }
+
+  function clearSession() {
+    try {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(ROLE_KEY);
+    } catch (e) { /* 同上 */ }
+  }
+
+  /** 解出 payload 看 exp。解不开就当过期 —— 宁可多登一次，也别拿着坏 token 一直撞 401 */
+  function tokenExpired(token) {
+    try {
+      var part = token.split('.')[1] || '';
+      part = part.replace(/-/g, '+').replace(/_/g, '/');
+      while (part.length % 4) part += '=';
+      var payload = JSON.parse(decodeURIComponent(escape(atob(part))));
+      return !payload.exp || payload.exp * 1000 <= Date.now() + 30000;
+    } catch (e) {
+      return true;
+    }
+  }
+
+  /**
+   * 取当前可用的 token。
+   *
+   * 客户端免登录，直接返回 null；平台端 / 商家端没登录就返回 null，
+   * 由 preloadSync 走降级（页面照样能打开，只是用的本地假数据）。
+   * 这里刻意**不做静默登录** —— 那等于在 localStorage 里埋一份明文密码。
+   */
+  function ensureToken() {
+    if (!enabled || END === 'client') return null;
+    var t = getToken();
+    if (t && !tokenExpired(t)) return t;
+    if (t) clearSession();
+    return null;
+  }
+
+  /** 登录（同步）。成功后落盘 token，返回后端给的整个 data */
+  function login(role, account, password) {
+    var data = syncRequest('POST', '/auth/login',
+      { role: role, account: account, password: password }, true);
+    saveSession(role, data);
+    return data;
+  }
+
+  // ================= 同步请求（见文首说明） =================
+
+  /**
+   * @param skipAuth 登录接口自己用，避免「拿 token 换 token」的递归
+   */
+  function syncRequest(method, path, body, skipAuth) {
+    return doRequest(method, path, body, skipAuth, true);
+  }
+
+  function doRequest(method, path, body, skipAuth, allowRetry) {
     var xhr = new XMLHttpRequest();
     xhr.open(method, API_BASE + path, false);   // false = 同步
     xhr.setRequestHeader('Accept', 'application/json');
     if (body !== undefined && body !== null) {
       xhr.setRequestHeader('Content-Type', 'application/json');
     }
-    xhr.send(body === undefined || body === null ? null : JSON.stringify(body));
-    if (xhr.status < 200 || xhr.status >= 300) {
-      throw new Error('HTTP ' + xhr.status);
+    if (!skipAuth) {
+      var t = getToken();
+      if (t) xhr.setRequestHeader('Authorization', 'Bearer ' + t);
     }
-    var j = JSON.parse(xhr.responseText);
+    xhr.send(body === undefined || body === null ? null : JSON.stringify(body));
+
+    var j = null;
+    try { j = JSON.parse(xhr.responseText); } catch (e) { j = null; }
+
+    if (xhr.status === 401 && allowRetry && !skipAuth) {
+      // token 过期或换了密钥：清掉重来一次。再失败就交给上层降级。
+      clearSession();
+      return doRequest(method, path, body, skipAuth, false);
+    }
+    if (xhr.status < 200 || xhr.status >= 300) {
+      // 优先把后端的业务提示抛出去（「发布太频繁」比「HTTP 400」有用得多）
+      throw new Error((j && j.msg) || ('HTTP ' + xhr.status));
+    }
+    if (!j) throw new Error('接口返回的不是 JSON');
     if (j.code !== 0) throw new Error(j.msg || '接口返回异常');
     return j.data;
   }
 
   function syncGet(path) { return syncRequest('GET', path, null); }
   function syncPost(path, body) { return syncRequest('POST', path, body || {}); }
+
+  /**
+   * 上传文件（异步）。
+   *
+   * 为什么不像别的请求那样走同步 XHR：上传动辄几百 KB 到 20MB，
+   * 同步会把主线程连同转圈动画一起冻住，体验很差。
+   * 离线模式下退化成 dataURL，原型仍然能完整演示「选了图能预览」。
+   */
+  function upload(file) {
+    return new Promise(function (resolve, reject) {
+      if (!enabled) {
+        if (file.size > 8 * 1024 * 1024) {
+          reject(new Error('离线模式下最大支持 8MB（接上后端后图片 5MB / 视频 20MB）'));
+          return;
+        }
+        var fr = new FileReader();
+        fr.onload = function () {
+          resolve({
+            url: fr.result,
+            name: file.name,
+            size: file.size,
+            kind: file.type.indexOf('video') === 0 ? 'video' : 'image',
+            offline: true
+          });
+        };
+        fr.onerror = function () { reject(new Error('读取文件失败')); };
+        fr.readAsDataURL(file);
+        return;
+      }
+
+      var fd = new FormData();
+      fd.append('file', file);
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', API_BASE + '/upload', true);
+      var t = getToken();
+      if (t) xhr.setRequestHeader('Authorization', 'Bearer ' + t);
+      xhr.onload = function () {
+        var j = null;
+        try { j = JSON.parse(xhr.responseText); } catch (e) { j = null; }
+        if (xhr.status >= 200 && xhr.status < 300 && j && j.code === 0) {
+          resolve(j.data);
+        } else {
+          reject(new Error((j && j.msg) || ('上传失败（HTTP ' + xhr.status + '）')));
+        }
+      };
+      xhr.onerror = function () { reject(new Error('网络异常，上传失败')); };
+      xhr.send(fd);
+    });
+  }
 
   /** 把配置（价格档 / 口味 / 菜系 / 全局发布规则）灌进内存与 MOCK */
   function applyConfig(cfg) {
@@ -217,6 +357,16 @@
   function preloadSync() {
     var t0 = Date.now();
     try {
+      // 平台端 / 商家端要凭证；客户端免登录浏览，直接放行
+      if (END !== 'client') {
+        var tk = ensureToken();
+        if (!tk) {
+          throw new Error('未登录或登录已过期 —— 请先在 ' +
+            (END === 'admin' ? 'admin/login.html' : 'merchant/login.html') +
+            ' 登录（页面上是本地演示数据）');
+        }
+      }
+
       // 每端只打一个聚合接口，请求数直接等于白屏时长，能少则少
       if (END === 'admin') {
         applyAdminData(syncGet('/admin/bootstrap') || {});
@@ -252,8 +402,15 @@
 
   // ================= 异步请求（写操作 / 未来用） =================
 
+  function authHeaders(extra) {
+    var h = extra || {};
+    var t = getToken();
+    if (t) h['Authorization'] = 'Bearer ' + t;
+    return h;
+  }
+
   function get(path) {
-    return fetch(API_BASE + path, { headers: { 'Accept': 'application/json' } })
+    return fetch(API_BASE + path, { headers: authHeaders({ 'Accept': 'application/json' }) })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (j.code !== 0) throw new Error(j.msg || '接口返回异常');
@@ -264,7 +421,7 @@
   function send(method, path, body) {
     return fetch(API_BASE + path, {
       method: method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body || {})
     })
       .then(function (r) { return r.json(); })
@@ -279,6 +436,7 @@
   /** 异步预加载：页面若愿意 await，可以拿到最新的后端数据 */
   function preload() {
     if (!enabled) return Promise.resolve(false);
+    if (END !== 'client' && !ensureToken()) return Promise.resolve(false);
     var path;
     if (END === 'admin') {
       path = '/admin/bootstrap';
@@ -311,6 +469,14 @@
     preload: preload,
     preloadSync: preloadSync,
     cache: cache,
+
+    // ---- 登录态 / 上传 ----
+    login: login,
+    logout: clearSession,
+    token: getToken,
+    role: getTokenRole,
+    isLoggedIn: function () { return !!ensureToken(); },
+    upload: upload,
 
     // ---- 基础读取 ----
     getShop: function (id) {
@@ -736,6 +902,8 @@
           shopId: merchantShopId(),
           name: p.name, desc: p.desc, type: p.type,
           media: p.media, cover: p.cover, price: p.price,
+          // 视频菜品才有；media 里那一项是封面图，真视频走这里
+          videoUrl: p.videoUrl,
           tasteTags: p.tasteTags
         };
       },
@@ -1018,6 +1186,10 @@
     window.MOCK.act = act;
     window.MOCK.isOnline = online;
     window.MOCK.preloadSync = preloadSync;   // 页面手动刷新用（如商家端审核页）
+    window.MOCK.login = login;               // 登录页用
+    window.MOCK.logout = clearSession;
+    window.MOCK.upload = upload;             // 选图 / 选视频后传这里
+    window.MOCK.isLoggedIn = API.isLoggedIn;
 
     var readMethods = ['getShop', 'getDish', 'getShopDishes', 'getDishComments', 'getTierByPrice'];
     readMethods.forEach(function (m) {
@@ -1037,7 +1209,9 @@
   window.__API_END__ = END;
 
   // 关键顺序：先同步预加载把后端数据备好，再包装 MOCK 方法。
-  if (enabled) preloadSync();
+  // 登录页跳过预加载 —— 那时候还没 token，拉聚合接口必然 401，纯属白跑一趟。
+  var IS_LOGIN_PAGE = /login\.html$/i.test(location.pathname || '');
+  if (enabled && !IS_LOGIN_PAGE) preloadSync();
   install();
 
   // 若 mock.js 尚未加载完，DOM 就绪后再补一次

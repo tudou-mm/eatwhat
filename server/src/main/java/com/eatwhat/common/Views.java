@@ -114,6 +114,7 @@ public class Views {
         m.put("type", d.getType());
         m.put("media", strList(d.getMedia()));
         m.put("cover", d.getCover());
+        m.put("videoUrl", d.getVideoUrl());
         m.put("price", d.getPrice());
         m.put("priceTierId", d.getPriceTierId());
         m.put("realTag", d.getRealTag());
