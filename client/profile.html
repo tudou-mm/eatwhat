@@ -148,6 +148,13 @@
   }
   .list-head__title { font-size: 17px; font-weight: 500; color: #fff; }
 
+  /* 列表页右上角的操作（如「清空」浏览记录） */
+  .list-head__act {
+    margin-left: auto; font-size: 12px; color: rgba(255,255,255,.5);
+    cursor: pointer; padding: 6px 10px;
+  }
+  .list-head__act:hover { color: #fff; }
+
   .sub-list { padding: 0 16px 100px; }
 
   .sub-item {
@@ -214,11 +221,13 @@
     <div class="side-note__row"><span class="side-note__k">未登录</span><span class="side-note__v">显示登录引导<br>浏览不需登录</span></div>
     <div class="side-note__row"><span class="side-note__k">已登录</span><span class="side-note__v">头像 / 昵称 / 城市<br>四项数据统计</span></div>
     <hr>
-    <div class="side-note__row"><span class="side-note__k">列表</span><span class="side-note__v">收藏 / 点赞 / 评论 / 浏览记录<br>点击进入二级列表</span></div>
+    <div class="side-note__row"><span class="side-note__k">数据</span><span class="side-note__v">收藏/点赞/评论/浏览<br><b>全部来自真实操作</b>，不写死</span></div>
+    <div class="side-note__row"><span class="side-note__k">列表</span><span class="side-note__v">收藏 / 点赞 / 评论 / 浏览记录<br>点击进入二级列表，可跳菜品</span></div>
+    <div class="side-note__row"><span class="side-note__k">登录</span><span class="side-note__v">跳转真实登录页<br>（不再用 confirm 模拟）</span></div>
     <div class="side-note__row"><span class="side-note__k">无订单</span><span class="side-note__v">本产品不做交易闭环</span></div>
     <hr>
     <div class="text-12" style="color:rgba(255,255,255,.4)">
-      改 <code>mock.js</code> 中 <code>currentUser.loggedIn</code> 切换登录态
+      收藏/点赞/浏览记录存在本地，清缓存会丢<br>接后端后可同步
     </div>
   </div>
 </div>
@@ -227,7 +236,6 @@
 <script src="../assets/js/api.js"></script>
 <script>
 let view = 'main';   // main | favorites | likes | comments | history | settings
-const localState = JSON.parse(localStorage.getItem('profileState') || '{}');
 
 (function init() {
   const params = new URLSearchParams(location.search);
@@ -242,18 +250,38 @@ function render() {
   else el.innerHTML = renderList(view);
 }
 
+/*
+ * 我的互动数据 —— 全部从统一的本地存储算，不再写死。
+ *
+ * 原先这里硬编码「收藏 8 / 点赞 12 / 评论 3」，列表内容是
+ * all.slice(0, 3) 这种假切片，跟用户真实干了什么毫无关系。
+ * 现在四项数字都来自实际数据：
+ *   收藏 / 点赞 → MOCK.interactedDishes(kind)
+ *   评论        → MOCK.comments 里 userId 是我的
+ *   浏览        → MOCK.getBrowsed()
+ */
+function myStats() {
+  return {
+    favorites: MOCK.interactedDishes('favorited').length,
+    likes: MOCK.interactedDishes('liked').length,
+    comments: MOCK.comments.filter(c => c.userId === MOCK.currentUser.id).length,
+    browsed: MOCK.getBrowsed().length
+  };
+}
+
 /* ---------- 主页面 ---------- */
 function renderMain() {
   const u = MOCK.currentUser;
-  const logged = u.loggedIn;
+  const logged = !!u.loggedIn;
+  const st = myStats();
 
   const head = logged ? `
     <div class="profile-head">
       <div class="ph-row">
         <div class="ph-avatar"><img src="${u.avatar}"></div>
         <div style="flex:1;min-width:0">
-          <div class="ph-name">${u.name}</div>
-          <div class="ph-city">📍 ${u.city} · ${u.district}</div>
+          <div class="ph-name">${escapeHtml(u.name)}</div>
+          <div class="ph-city">📍 ${escapeHtml(u.city)} · ${escapeHtml(u.district)}</div>
         </div>
         <div class="ph-edit" onclick="go('settings')">编辑资料</div>
       </div>
@@ -271,16 +299,16 @@ function renderMain() {
   const stats = logged ? `
     <div class="stat-row">
       <div class="sr-item" onclick="go('favorites')">
-        <div class="sr-num">8</div><div class="sr-label">收藏</div>
+        <div class="sr-num">${st.favorites}</div><div class="sr-label">收藏</div>
       </div>
       <div class="sr-item" onclick="go('likes')">
-        <div class="sr-num">12</div><div class="sr-label">点赞</div>
+        <div class="sr-num">${st.likes}</div><div class="sr-label">点赞</div>
       </div>
       <div class="sr-item" onclick="go('comments')">
-        <div class="sr-num">3</div><div class="sr-label">评论</div>
+        <div class="sr-num">${st.comments}</div><div class="sr-label">评论</div>
       </div>
       <div class="sr-item" onclick="go('history')">
-        <div class="sr-num" id="hisNum">0</div><div class="sr-label">浏览</div>
+        <div class="sr-num">${st.browsed}</div><div class="sr-label">浏览</div>
       </div>
     </div>
   ` : '';
@@ -291,25 +319,25 @@ function renderMain() {
       <div class="menu-item" onclick="go('favorites')">
         <div class="mi-icon" style="background:rgba(254,44,85,.15)">☆</div>
         <div class="mi-label">我的收藏</div>
-        <div class="mi-count">8</div>
+        <div class="mi-count">${st.favorites}</div>
         <div class="mi-arrow">›</div>
       </div>
       <div class="menu-item" onclick="go('likes')">
         <div class="mi-icon" style="background:rgba(254,44,85,.15)">♥</div>
         <div class="mi-label">我的点赞</div>
-        <div class="mi-count">12</div>
+        <div class="mi-count">${st.likes}</div>
         <div class="mi-arrow">›</div>
       </div>
       <div class="menu-item" onclick="go('comments')">
         <div class="mi-icon" style="background:rgba(37,244,238,.12)">💬</div>
         <div class="mi-label">我的评论</div>
-        <div class="mi-count">3</div>
+        <div class="mi-count">${st.comments}</div>
         <div class="mi-arrow">›</div>
       </div>
       <div class="menu-item" onclick="go('history')">
         <div class="mi-icon" style="background:rgba(255,255,255,.08)">👀</div>
         <div class="mi-label">浏览记录</div>
-        <div class="mi-count" id="hisNum2">0</div>
+        <div class="mi-count">${st.browsed}</div>
         <div class="mi-arrow">›</div>
       </div>
     </div>
@@ -339,21 +367,28 @@ function renderMain() {
 
 /* ---------- 二级列表 ---------- */
 const LIST_META = {
-  favorites: { title: '我的收藏', icon: '☆' },
-  likes: { title: '我的点赞', icon: '♥' },
-  comments: { title: '我的评论', icon: '💬' },
-  history: { title: '浏览记录', icon: '👀' }
+  favorites: { title: '我的收藏', icon: '☆', emptyHint: '在首页点 ☆ 收藏喜欢的菜' },
+  likes: { title: '我的点赞', icon: '♥', emptyHint: '在首页点 ♥ 给喜欢的菜点赞' },
+  comments: { title: '我的评论', icon: '💬', emptyHint: '去菜品详情页说两句' },
+  history: { title: '浏览记录', icon: '👀', emptyHint: '刷过的菜会出现在这里' }
 };
 
 function renderList(type) {
   const meta = LIST_META[type];
 
+  /*
+   * 列表内容全部来自真实数据，不再用 all.slice(0,3) 糊。
+   * 收藏 / 点赞读统一互动存储，浏览读浏览记录，评论读 MOCK.comments。
+   */
   let items = [];
   if (type === 'comments') {
     items = MOCK.comments.filter(c => c.userId === MOCK.currentUser.id);
-  } else {
-    const all = MOCK.dishes.filter(d => d.status === 'normal');
-    items = type === 'history' ? all.slice(0, 4) : all.slice(0, 3);
+  } else if (type === 'favorites') {
+    items = MOCK.interactedDishes('favorited');
+  } else if (type === 'likes') {
+    items = MOCK.interactedDishes('liked');
+  } else if (type === 'history') {
+    items = MOCK.browsedDishes();
   }
 
   const body = items.length ? items.map(d => {
@@ -363,7 +398,7 @@ function renderList(type) {
         <div class="sub-item" onclick="location.href='dish.html?id=${d.dishId}'">
           <div class="sub-item__img"><img src="${dish ? dish.media[0] : ''}"></div>
           <div style="flex:1;min-width:0">
-            <div class="sub-item__name">${dish ? dish.name : '菜品'}</div>
+            <div class="sub-item__name">${dish ? escapeHtml(dish.name) : '菜品'}</div>
             <div class="sub-item__meta">${escapeHtml(d.content)}</div>
             <div class="sub-item__meta mt-4" style="color:rgba(255,255,255,.3)">${MOCK.timeAgo(d.at)}</div>
           </div>
@@ -374,8 +409,8 @@ function renderList(type) {
       <div class="sub-item" onclick="location.href='dish.html?id=${d.id}'">
         <div class="sub-item__img"><img src="${d.cover || d.media[0]}"></div>
         <div style="flex:1;min-width:0">
-          <div class="sub-item__name">${d.name}</div>
-          <div class="sub-item__meta">${d.shopName}</div>
+          <div class="sub-item__name">${escapeHtml(d.name)}</div>
+          <div class="sub-item__meta">${escapeHtml(d.shopName || '')}</div>
           <div class="sub-item__meta mt-4">
             ${tier ? tier.name + ' · ' : ''}${MOCK.timeAgo(d.publishedAt)}
           </div>
@@ -385,12 +420,14 @@ function renderList(type) {
     <div class="empty" style="color:rgba(255,255,255,.4);padding:60px 0">
       <div class="empty__icon">${meta.icon}</div>
       <div class="empty__text">还没有${meta.title.replace('我的', '')}</div>
+      ${meta.emptyHint ? `<div class="empty__hint">${meta.emptyHint}</div>` : ''}
     </div>`;
 
   return `
     <div class="list-head">
       <div class="list-head__back" onclick="go('main')">‹</div>
       <div class="list-head__title">${meta.title}</div>
+      ${type === 'history' && items.length ? '<div class="list-head__act" onclick="clearHistory()">清空</div>' : ''}
     </div>
     <div class="sub-list">${body}</div>
   `;
@@ -435,23 +472,27 @@ function go(v) {
   view = v;
   document.getElementById('scroll').scrollTop = 0;
   render();
-  if (v === 'main') updateHistoryNum();
 }
 
-function updateHistoryNum() {
-  const n = Object.keys(localState).length;
-  const a = document.getElementById('hisNum');
-  const b = document.getElementById('hisNum2');
-  if (a) a.textContent = n || 4;
-  if (b) b.textContent = n || 4;
+/* 清空浏览记录（列表页右上角） */
+function clearHistory() {
+  if (!confirm('清空全部浏览记录？')) return;
+  MOCK.clearBrowsed();
+  render();
+  toast('已清空浏览记录');
 }
 
+/*
+ * 登录：**跳转真实登录页**，不再用 confirm 假装登录。
+ *
+ * 原先这里是 `confirm('是否模拟登录成功？')` 然后直接把
+ * loggedIn 翻成 true —— 绕过了后端，也绕过了登录页的验证码流程。
+ * 结果同一个 App 里有两条互不相干的登录路径：
+ * 从「我的」进去是假登录（没有 token），从被拦截的点赞进去是真登录。
+ * 演示时看着一样，接后端后行为完全不同。
+ */
 function toLogin() {
-  if (confirm('这是原型演示，是否模拟登录成功？')) {
-    MOCK.currentUser.loggedIn = true;
-    render();
-    toast('已模拟登录');
-  }
+  location.href = 'login.html?from=profile.html';
 }
 
 function toLogout() {
@@ -480,8 +521,6 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('is-show'), 1600);
 }
-
-setTimeout(updateHistoryNum, 0);
 </script>
 </body>
 </html>

@@ -657,6 +657,16 @@
     isLoggedIn: function () { return !!ensureToken(); },
     upload: upload,
 
+    // ---- 客户端互动 / 登录引导 ----
+    toggleInteract: toggleInteract,
+    guardLogin: guardLogin,
+    isInteracted: function (kind, dishId) {
+      return window.MOCK ? window.MOCK.isInteracted(kind, dishId) : false;
+    },
+    addBrowsed: function (dishId) {
+      if (window.MOCK) window.MOCK.addBrowsed(dishId);
+    },
+
     // ---- 基础读取 ----
     getShop: function (id) {
       if (cache.loaded) {
@@ -850,6 +860,23 @@
         if (d && d.stats) d.stats.comments = (d.stats.comments || 0) + 1;
       }
     },
+
+    /*
+     * 点赞 / 收藏。
+     *
+     * ⚠️ 这是「本地 + 后端双写」：**先改本地（永远成功），再尽力打后端**。
+     *
+     * 为什么顺序是这样，而不是「后端成功才算数」：
+     * 点赞是个高频、低价值、用户预期「立刻有反馈」的动作。若等后端返回
+     * 才点亮爱心，弱网下会有明显卡顿感；而如果后端报错就回滚，
+     * 用户会觉得「我明明点了怎么又灭了」。
+     * 所以本地状态是权威的（决定爱心亮不亮），后端的 stats 只当参考数。
+     *
+     * 注意与评论的区别：评论必须落库（内容是别人要看到的），
+     * 失败就得让用户知道；点赞失败了静默即可，用户体验优先。
+     */
+    'client.like': interactAction('liked'),
+    'client.favorite': interactAction('favorited'),
 
     // ---------- 商家审核 ----------
     'audit.approve': {
@@ -1318,6 +1345,31 @@
     }
   };
 
+  /**
+   * 互动（点赞 / 收藏）动作工厂。
+   *
+   * 后端接口是 /client/dish/{id}/action，body 里带 type。
+   * 但后端此刻的语义是「计数 +1」，而本地要的是「切换」——
+   * 两者会打架（取消点赞时后端无法表达 -1）。所以：
+   *   - 本地：toggle，决定爱心亮不亮，**这是权威**；
+   *   - 后端：只在「变成点赞」时通知一次，失败静默（见 ACTIONS 里的说明）。
+   */
+  function interactAction(kind) {
+    var type = kind === 'favorited' ? 'favorite' : 'like';
+    return {
+      path: function (p) { return '/client/dish/' + p.dishId + '/action'; },
+      body: function () { return { type: type }; },
+      local: function () { return true; },   // 本地切换由客户端自己做了，这里不用再动
+      apply: function (data, p) {
+        // 服务端可能回权威的 stats，用它校准计数（爱心状态仍以本地为准）
+        if (data && data.id) {
+          var d = findDish(data.id);
+          if (d && data.stats) d.stats = data.stats;
+        }
+      }
+    };
+  }
+
   /** 店铺状态类动作的工厂：mute / ban / restore 三者只差状态值 */
   function shopStatusAction(name, status) {
     return {
@@ -1351,6 +1403,183 @@
     function p(n) { return (n < 10 ? '0' : '') + n; }
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
            ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  // ================= 客户端互动（本地 + 后端双写） =================
+
+  /**
+   * 切换点赞 / 收藏。
+   *
+   * 返回 { on, count }：on = 切换后的状态，count = 该菜品最新的总数。
+   *
+   * 三条设计要点：
+   * 1. **本地先改**（MOCK.toggleInteract 写 localStorage）—— 保证刷新、
+   *    翻页、切 Tab 都不丢，这是上一版最大的问题。
+   * 2. **后端尽力而为** —— 在线时补一次通知；失败只 warn，不回滚。
+   *    理由见 ACTIONS 里 client.like 的注释。
+   * 3. **计数同时改菜品上的 stats** —— 页面上的数字要跟着动。
+   *    离线时纯靠它；在线时若后端回了权威 stats 会被覆盖回来。
+   */
+  function toggleInteract(kind, dishId) {
+    var M = window.MOCK;
+    if (!M || !dishId) return { on: false, count: 0 };
+
+    /*
+     * ⚠️ 必须调 _local_ 备份，不能调 M.toggleInteract。
+     *
+     * install() 会把本函数挂到 window.MOCK.toggleInteract 上覆盖掉 mock.js 的原版，
+     * 所以这里再调 M.toggleInteract 就是**调自己** —— 无限递归，页面直接卡死。
+     * 与 getShop / getDish 等读方法同一套路：原版先备份到 _local_xxx 再覆写。
+     */
+    var local = M._local_toggleInteract || M.toggleInteract;
+    var localIs = M._local_isInteracted || M.isInteracted;
+
+    var before = localIs.call(M, kind, dishId);
+    var r = local.call(M, kind, dishId);      // 本地权威状态
+    var on = r.on;
+
+    // 联动计数
+    var d = findDish(dishId) || M.getDish(dishId);
+    var key = kind === 'favorited' ? 'favorites' : 'likes';
+    if (d && d.stats) {
+      d.stats[key] = Math.max(0, (d.stats[key] || 0) + (on ? 1 : -1));
+    } else if (M.getDish) {
+      var ld = M.getDish(dishId);
+      if (ld && ld.stats) ld.stats[key] = Math.max(0, (ld.stats[key] || 0) + (on ? 1 : -1));
+    }
+
+    // 后端只通知「变成点赞」这一种，取消点赞后端表达不了。
+    // 用 try 包住：点赞失败不该打断用户，最多控制台留个痕。
+    if (online() && on) {
+      try {
+        var actName = kind === 'favorited' ? 'client.favorite' : 'client.like';
+        var res = act(actName, { dishId: dishId });
+        if (!res.ok) console.warn('[api] 互动未能同步到后端：' + res.msg);
+      } catch (e) {
+        console.warn('[api] 互动未能同步到后端：' + e.message);
+      }
+    }
+
+    return { on: on, count: (d && d.stats) ? d.stats[key] : 0, changed: before !== on };
+  }
+
+  // ================= 未登录引导浮层 =================
+
+  /**
+   * 页面内的登录引导浮层，**替代 confirm()**。
+   *
+   * 为什么必须换掉 confirm：
+   * - iOS Safari 会拦掉非用户手势触发的 confirm，点了没反应；
+   * - confirm 样式完全不可控，跟深色沉浸式体验格格不入；
+   * - 弹两次还会被浏览器「阻止此页面显示更多对话框」直接静音。
+   *
+   * 用法：把原来
+   *     function requireLogin() { if (...) return true; if (confirm(...)) ...; }
+   * 换成
+   *     function requireLogin() { return !window.EAT_API || window.EAT_API.guardLogin(); }
+   * guardLogin 返回 true 表示已登录可继续，false 表示已弹出引导。
+   */
+  var loginSheetEl = null;
+
+  /**
+   * 当前是否跑在「有真实 DOM」的浏览器里。
+   *
+   * 适配层会被 Node vm 沙箱直接加载（server/tools/test_adapter.cjs），
+   * 那里的 document 只是个满足基本读写的替身，没有 createElement /
+   * getElementById。浮层是纯 UI 能力，在那种环境下必须优雅跳过，
+   * 而不是让整个 api.js 加载失败。
+   */
+  function hasDom() {
+    return typeof document !== 'undefined' &&
+           typeof document.createElement === 'function' &&
+           typeof document.getElementById === 'function';
+  }
+
+  function ensureLoginSheet() {
+    if (!hasDom()) return null;
+    if (loginSheetEl && document.body.contains(loginSheetEl)) return loginSheetEl;
+
+    var mask = document.createElement('div');
+    mask.className = 'eat-sheet-mask';
+
+    var sheet = document.createElement('div');
+    sheet.className = 'eat-sheet';
+    sheet.innerHTML =
+      '<div class="eat-sheet__handle"></div>' +
+      '<div class="eat-sheet__icon">🍜</div>' +
+      '<div class="eat-sheet__title">登录后才能互动</div>' +
+      '<div class="eat-sheet__desc">登录后即可点赞、收藏和评论<br>浏览与刷菜无需登录</div>' +
+      '<div class="eat-sheet__btns">' +
+        '<button class="eat-sheet__btn eat-sheet__btn--ghost" data-act="cancel">再逛逛</button>' +
+        '<button class="eat-sheet__btn eat-sheet__btn--primary" data-act="login">去登录</button>' +
+      '</div>';
+
+    mask.appendChild(sheet);
+    // 挂在 .phone 里（原型是手机壳），挂不到就挂 body
+    var host = document.querySelector('.phone') || document.body;
+    host.appendChild(mask);
+
+    function close() { mask.classList.remove('is-open'); }
+
+    mask.addEventListener('click', function (e) {
+      if (e.target === mask) close();
+    });
+    sheet.querySelector('[data-act="cancel"]').addEventListener('click', close);
+    sheet.querySelector('[data-act="login"]').addEventListener('click', function () {
+      close();
+      location.href = 'login.html';
+    });
+
+    loginSheetEl = mask;
+    return mask;
+  }
+
+  /** 未登录 → 弹出引导并返回 false；已登录 → 返回 true */
+  function guardLogin() {
+    if (window.MOCK && window.MOCK.currentUser && window.MOCK.currentUser.loggedIn) {
+      return true;
+    }
+    var mask = ensureLoginSheet();
+    if (mask) mask.classList.add('is-open');
+    return false;
+  }
+
+  /**
+   * 注入浮层样式。
+   * 为什么不写进 base.css：base.css 是三端共用的浅色后台风格，
+   * 这套浮层只服务客户端的深色沉浸场景，放这里不会污染后台。
+   */
+  function injectSheetStyle() {
+    // 非浏览器环境（Node vm 跑单测等）没有真正的 document，直接跳过。
+    // 这里必须防御：本函数在 install() 里无条件调用，缺了判断会让整个
+    // 适配层在沙箱里加载即崩，连累所有不依赖 DOM 的用例。
+    if (!hasDom()) return;
+    if (document.getElementById('eat-sheet-style')) return;
+    var st = document.createElement('style');
+    st.id = 'eat-sheet-style';
+    st.textContent = [
+      '.eat-sheet-mask{position:absolute;inset:0;background:rgba(0,0,0,.6);',
+      'backdrop-filter:blur(3px);z-index:200;display:none;',
+      'align-items:flex-end;justify-content:center;}',
+      '.eat-sheet-mask.is-open{display:flex;}',
+      '.eat-sheet{width:100%;background:#1C1C1E;border-radius:20px 20px 0 0;',
+      'padding:8px 24px 28px;text-align:center;color:#fff;',
+      'animation:eatSheetUp .26s cubic-bezier(.4,0,.2,1);}',
+      '@keyframes eatSheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}',
+      '.eat-sheet__handle{width:36px;height:4px;border-radius:2px;',
+      'background:rgba(255,255,255,.2);margin:0 auto 18px;}',
+      '.eat-sheet__icon{font-size:38px;margin-bottom:10px;}',
+      '.eat-sheet__title{font-size:17px;font-weight:600;margin-bottom:8px;}',
+      '.eat-sheet__desc{font-size:13px;color:rgba(255,255,255,.55);line-height:1.7;margin-bottom:22px;}',
+      '.eat-sheet__btns{display:grid;grid-template-columns:1fr 1fr;gap:10px;}',
+      '.eat-sheet__btn{height:46px;border-radius:23px;font-size:15px;cursor:pointer;',
+      'border:none;transition:background .15s;}',
+      '.eat-sheet__btn--ghost{background:rgba(255,255,255,.12);color:#fff;}',
+      '.eat-sheet__btn--ghost:hover{background:rgba(255,255,255,.2);}',
+      '.eat-sheet__btn--primary{background:#FE2C55;color:#fff;font-weight:500;}',
+      '.eat-sheet__btn--primary:hover{background:#E62248;}'
+    ].join('');
+    document.head.appendChild(st);
   }
 
   /**
@@ -1412,6 +1641,24 @@
     window.MOCK.sendSmsCode = sendSmsCode;    // 「获取验证码」按钮用
     window.MOCK.upload = upload;             // 选图 / 选视频后传这里
     window.MOCK.isLoggedIn = API.isLoggedIn;
+
+    /*
+     * 客户端互动与登录引导。
+     * 页面统一写 MOCK.toggleInteract(...) / MOCK.guardLogin() ——
+     * 与 MOCK.getShop 等一样，页面不需要知道背后有没有后端。
+     *
+     * ⚠️ 覆写前必须备份原版到 _local_xxx：toggleInteract 内部要读改本地状态，
+     * 而挂上去的本体也叫 toggleInteract，不留备份就会调到自己（无限递归）。
+     */
+    if (typeof window.MOCK.toggleInteract === 'function' && !window.MOCK._local_toggleInteract) {
+      window.MOCK._local_toggleInteract = window.MOCK.toggleInteract;
+    }
+    if (typeof window.MOCK.isInteracted === 'function' && !window.MOCK._local_isInteracted) {
+      window.MOCK._local_isInteracted = window.MOCK.isInteracted;
+    }
+    window.MOCK.toggleInteract = toggleInteract;
+    window.MOCK.guardLogin = guardLogin;
+    injectSheetStyle();                      // 浮层样式注入一次即可
 
     var readMethods = ['getShop', 'getDish', 'getShopDishes', 'getDishComments', 'getTierByPrice'];
     readMethods.forEach(function (m) {

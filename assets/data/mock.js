@@ -995,6 +995,156 @@ const MOCK = {
     const d = this.getDish(dishId);
     if (d) d.stats.checkins += 1;
     return this._checkins[dishId];
+  },
+
+  /* ==========================================================
+     客户端 · 本地状态（互动 + 浏览记录 + 打卡）
+
+     为什么要有这一层：
+     原先 feed.html 把「我点过赞」记在内存变量 S.liked 里，切一下
+     Tab、翻一次页就全丢了；「随心看」排除已浏览同样只在内存，
+     而 profile.html 的浏览记录读的是**另一个 key**（profileState），
+     全项目没有任何地方写过它 —— 所以那个列表永远是 4 条假数据。
+
+     现在三页共用一个存储层：key 只有两个，谁写谁读都对齐。
+     注意：这里只存**当前用户的行为**，不存菜品本身的互动总数
+     （那些在 dish.stats 上，由后端当权威）。
+     ========================================================== */
+
+  INTERACT_KEY: 'eatwhat_interact',
+  BROWSED_KEY: 'eatwhat_browsed',
+  CHECKIN_KEY: 'eatwhat_checkin_shops',
+
+  /* 浏览记录上限：超过就丢最早的。与 docs/04 建议 8 的口径一致 */
+  BROWSED_MAX: 200,
+
+  /* 读某类互动（liked / favorited），返回 { dishId: true } */
+  getInteract(kind) {
+    try {
+      const raw = localStorage.getItem(this.INTERACT_KEY);
+      const o = raw ? JSON.parse(raw) : {};
+      return (o && o[kind]) || {};
+    } catch (e) {
+      return {};   // 脏 JSON 当作没有，不阻塞页面
+    }
+  },
+
+  _saveInteract(kind, map) {
+    try {
+      const raw = localStorage.getItem(this.INTERACT_KEY);
+      const o = raw ? (JSON.parse(raw) || {}) : {};
+      o[kind] = map;
+      localStorage.setItem(this.INTERACT_KEY, JSON.stringify(o));
+    } catch (e) { /* 隐私模式写不进去，忽略 */ }
+  },
+
+  isInteracted(kind, dishId) {
+    return !!this.getInteract(kind)[dishId];
+  },
+
+  /*
+   * 切换点赞 / 收藏。
+   * 返回 { on: 切换后的状态 }，调用方据此更新按钮样式。
+   * 只负责「我有没有点过」，菜品上的总数由调用方联动。
+   */
+  toggleInteract(kind, dishId) {
+    const map = this.getInteract(kind);
+    if (map[dishId]) delete map[dishId];
+    else map[dishId] = true;
+    this._saveInteract(kind, map);
+    return { on: !!map[dishId] };
+  },
+
+  /* 当前所有互动的菜品 id 列表，个人中心用它出列表 */
+  interactedIds(kind) {
+    return Object.keys(this.getInteract(kind));
+  },
+
+  /* 按互动时间倒序取菜品对象（个人中心的「我的收藏 / 点赞」） */
+  interactedDishes(kind) {
+    const ids = this.interactedIds(kind);
+    const out = [];
+    ids.forEach(id => {
+      // 已下架的菜不展示，但记录留着 —— 与「不物理删除」同口径
+      const d = this.dishes.find(x => x.id === id && x.status === 'normal');
+      if (d) out.push(d);
+    });
+    return out;
+  },
+
+  /* ---------- 浏览记录 ---------- */
+
+  getBrowsed() {
+    try {
+      const raw = localStorage.getItem(this.BROWSED_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  /* 记一次浏览。已存在则提到最前（最近看的排前面），并把数组截到上限 */
+  addBrowsed(dishId) {
+    if (!dishId) return;
+    let arr = this.getBrowsed().filter(id => id !== dishId);
+    arr.unshift(dishId);
+    if (arr.length > this.BROWSED_MAX) arr = arr.slice(0, this.BROWSED_MAX);
+    try {
+      localStorage.setItem(this.BROWSED_KEY, JSON.stringify(arr));
+    } catch (e) { /* 忽略 */ }
+  },
+
+  clearBrowsed() {
+    try { localStorage.removeItem(this.BROWSED_KEY); } catch (e) { /* 忽略 */ }
+  },
+
+  /* 浏览记录 → 菜品对象，顺序即浏览顺序 */
+  browsedDishes() {
+    const out = [];
+    this.getBrowsed().forEach(id => {
+      const d = this.dishes.find(x => x.id === id);
+      if (d) out.push(d);
+    });
+    return out;
+  },
+
+  /* ---------- 打卡 ---------- */
+
+  getCheckinShops() {
+    try {
+      const raw = localStorage.getItem(this.CHECKIN_KEY);
+      const o = raw ? JSON.parse(raw) : {};
+      return (o && typeof o === 'object') ? o : {};
+    } catch (e) {
+      return {};
+    }
+  },
+
+  hasCheckedIn(shopId) {
+    return !!this.getCheckinShops()[shopId];
+  },
+
+  /*
+   * 打卡（本地）。
+   * 返回 { ok, count }：count 是这家店打卡后的总数，直接给成功页用。
+   * ⚠️ 计数口径：shop.stats.checkins 是**服务端给的基数**，
+   * 本地再加 1 表示「我这次打卡」。提前 return 掉重复打卡，
+   * 否则反复点会让数字一直涨。
+   */
+  doCheckinShop(shopId) {
+    const map = this.getCheckinShops();
+    if (map[shopId]) {
+      const s = this.getShop(shopId);
+      return { ok: false, reason: 'done', count: s ? s.stats.checkins : 0 };
+    }
+    map[shopId] = Date.now();
+    try {
+      localStorage.setItem(this.CHECKIN_KEY, JSON.stringify(map));
+    } catch (e) { /* 忽略 */ }
+    const s = this.getShop(shopId);
+    if (s && s.stats) s.stats.checkins += 1;
+    return { ok: true, count: s ? s.stats.checkins : 0 };
   }
 };
 

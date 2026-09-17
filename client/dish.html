@@ -156,6 +156,40 @@
   .cm-reply__text { font-size: 13px; color: rgba(255,255,255,.75); line-height: 1.6; }
   .cm-reply__time { font-size: 11px; color: rgba(255,255,255,.3); margin-top: 5px; }
 
+  /* 用户之间的回复（与商家回评区分开：蓝色系，不带「商家」标） */
+  .cm-sub {
+    background: rgba(37,244,238,.06); border-radius: 10px;
+    padding: 10px 12px; margin-top: 10px;
+  }
+  .cm-sub__head {
+    font-size: 11px; color: #25F4EE; margin-bottom: 4px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .cm-sub__text { font-size: 13px; color: rgba(255,255,255,.78); line-height: 1.6; }
+  .cm-sub__time { font-size: 11px; color: rgba(255,255,255,.3); margin-top: 5px; }
+
+  /* 「回复」按钮：默认很淡，不抢评论内容的注意力 */
+  .cm-act {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 12px; color: rgba(255,255,255,.4);
+    margin-top: 8px; cursor: pointer; padding: 2px 0;
+    transition: color .15s;
+  }
+  .cm-act:hover { color: #25F4EE; }
+
+  /* 正在回复谁的状态条 */
+  .cm-target {
+    display: none; align-items: center; gap: 8px;
+    padding: 8px 16px 0; font-size: 12px; color: rgba(255,255,255,.6);
+  }
+  .cm-target.is-on { display: flex; }
+  .cm-target__name { color: #25F4EE; }
+  .cm-target__cancel {
+    margin-left: auto; cursor: pointer; padding: 2px 8px;
+    border-radius: 10px; background: rgba(255,255,255,.1);
+  }
+  .cm-target__cancel:hover { background: rgba(255,255,255,.2); }
+
   /* 底部评论输入 */
   .cm-bar {
     position: absolute; left: 0; right: 0; bottom: 0;
@@ -269,6 +303,12 @@
       <div class="cm-list" id="cmList"></div>
     </div>
 
+    <!-- 正在回复某人时的状态条 -->
+    <div class="cm-target" id="cmTarget">
+      <span>正在回复 <span class="cm-target__name" id="cmTargetName">—</span></span>
+      <span class="cm-target__cancel" onclick="cancelReply()">取消</span>
+    </div>
+
     <!-- 底部输入 -->
     <div class="cm-bar">
       <input class="cm-input" id="cmInput" placeholder="说点什么…" maxlength="100"
@@ -287,10 +327,12 @@
     <div class="side-note__row"><span class="side-note__k">操作</span><span class="side-note__v">点赞 / 收藏 / 分享 / 导航</span></div>
     <hr>
     <div class="side-note__row"><span class="side-note__k">评论</span><span class="side-note__v">最新优先，商家回评带「商家」标识</span></div>
-    <div class="side-note__row"><span class="side-note__k">未登录</span><span class="side-note__v">点赞/收藏/评论会拦截</span></div>
+    <div class="side-note__row"><span class="side-note__k">回复</span><span class="side-note__v">可回复其他用户，回复挂在原评论下<br><b>仅本地</b>：用户间回复后端接口待补</span></div>
+    <div class="side-note__row"><span class="side-note__k">未登录</span><span class="side-note__v">点赞/收藏/评论弹出底部引导<br>（不用系统 confirm）</span></div>
     <hr>
+    <div class="side-note__row"><span class="side-note__k">互动</span><span class="side-note__v">点赞／收藏<b>落本地</b>，刷新不丢<br>在线时同步通知后端</span></div>
     <div class="text-12" style="color:rgba(255,255,255,.4)">
-      发的评论会实时插入列表顶部
+      进本页会记一次浏览，个人中心的「浏览记录」能看到
     </div>
   </div>
 </div>
@@ -300,13 +342,16 @@
 <script>
 let dish = null;
 let shop = null;
-let state = { liked: false, faved: false };
+/* 正在回复哪条评论；null 表示发主评论而非回复 */
+let replyTo = null;
 
 (function init() {
   const params = new URLSearchParams(location.search);
   const id = params.get('id') || 'd_001';
   dish = MOCK.getDish(id) || MOCK.dishes[0];
   shop = MOCK.getShop(dish.shopId);
+  // 进详情页即记一次浏览（首页的「随心看」排除、个人中心的浏览记录都读它）
+  MOCK.addBrowsed(dish.id);
   render();
 })();
 
@@ -355,9 +400,11 @@ function render() {
   document.getElementById('smName').textContent = shop.name;
   document.getElementById('smMeta').textContent = `${shop.cuisine} · ${shop.distance}km · ${shop.hours}`;
 
-  // 互动数
+  // 互动数 + 我是否点过（从统一的本地存储读，翻页回来仍然亮着）
   document.getElementById('likeNum').textContent = MOCK.fmtNum(dish.stats.likes);
   document.getElementById('favNum').textContent = MOCK.fmtNum(dish.stats.favorites);
+  document.getElementById('btnLike').classList.toggle('is-on', MOCK.isInteracted('liked', dish.id));
+  document.getElementById('btnFav').classList.toggle('is-on', MOCK.isInteracted('favorited', dish.id));
 
   renderComments();
 }
@@ -378,9 +425,20 @@ function renderComments() {
     <div class="cm-item">
       <div class="cm-avatar"><img src="${c.avatar}"></div>
       <div class="cm-body">
-        <div class="cm-name">${c.userName}</div>
+        <div class="cm-name">${escapeHtml(c.userName)}</div>
         <div class="cm-text">${escapeHtml(c.content)}</div>
         <div class="cm-time">${MOCK.timeAgo(c.at)}</div>
+
+        <!-- 其他用户的回复 -->
+        ${(c.subReplies || []).map(r => `
+          <div class="cm-sub">
+            <div class="cm-sub__head">↩ ${escapeHtml(r.userName)} 回复</div>
+            <div class="cm-sub__text">${escapeHtml(r.content)}</div>
+            <div class="cm-sub__time">${MOCK.timeAgo(r.at)}</div>
+          </div>
+        `).join('')}
+
+        <!-- 商家回评（与用户回复区分开） -->
         ${c.reply ? `
           <div class="cm-reply">
             <div class="cm-reply__tag">🏪 商家回复</div>
@@ -388,35 +446,42 @@ function renderComments() {
             <div class="cm-reply__time">${MOCK.timeAgo(c.reply.at)}</div>
           </div>
         ` : ''}
+
+        <div class="cm-act" onclick="startReply('${c.id}')">↩ 回复</div>
       </div>
     </div>
   `).join('');
 }
 
 /* ---------- 登录拦截 ---------- */
+/*
+ * 页面内浮层，不用 confirm()。
+ * 理由：iOS Safari 会拦掉非用户手势触发的 confirm，而且系统灰框
+ * 在深色沉浸页里非常突兀。
+ */
 function requireLogin() {
-  if (MOCK.currentUser.loggedIn) return true;
-  if (confirm('登录后才能操作，现在去登录？')) location.href = 'login.html';
-  return false;
+  return MOCK.guardLogin();
 }
 
 /* ---------- 互动 ---------- */
+/*
+ * 点赞 / 收藏走 MOCK.toggleInteract：本地先落盘（刷新、翻页都不丢），
+ * 在线时顺带通知后端。数字用返回的 count 更新。
+ */
 function toggleLike() {
   if (!requireLogin()) return;
-  state.liked = !state.liked;
-  dish.stats.likes += state.liked ? 1 : -1;
-  document.getElementById('btnLike').classList.toggle('is-on', state.liked);
-  document.getElementById('likeNum').textContent = MOCK.fmtNum(dish.stats.likes);
-  track('like', { dishId: dish.id, on: state.liked });
+  const r = MOCK.toggleInteract('liked', dish.id);
+  document.getElementById('btnLike').classList.toggle('is-on', r.on);
+  document.getElementById('likeNum').textContent = MOCK.fmtNum(r.count);
+  track('like', { dishId: dish.id, on: r.on });
 }
 
 function toggleFav() {
   if (!requireLogin()) return;
-  state.faved = !state.faved;
-  dish.stats.favorites += state.faved ? 1 : -1;
-  document.getElementById('btnFav').classList.toggle('is-on', state.faved);
-  document.getElementById('favNum').textContent = MOCK.fmtNum(dish.stats.favorites);
-  track('favorite', { dishId: dish.id, on: state.faved });
+  const r = MOCK.toggleInteract('favorited', dish.id);
+  document.getElementById('btnFav').classList.toggle('is-on', r.on);
+  document.getElementById('favNum').textContent = MOCK.fmtNum(r.count);
+  track('favorite', { dishId: dish.id, on: r.on });
 }
 
 function goShop() {
@@ -433,11 +498,64 @@ function onInput() {
   document.getElementById('cmSend').classList.toggle('is-disabled', !v);
 }
 
+/* 点「回复」：把目标记下来，输入框聚焦并换提示语 */
+function startReply(commentId) {
+  if (!requireLogin()) return;
+  const list = MOCK.getDishComments(dish.id);
+  const target = list.find(c => c.id === commentId);
+  if (!target) return;
+
+  replyTo = target;
+  const bar = document.getElementById('cmTarget');
+  bar.classList.add('is-on');
+  document.getElementById('cmTargetName').textContent = target.userName;
+
+  const input = document.getElementById('cmInput');
+  input.placeholder = '回复 ' + target.userName + '…';
+  input.focus();
+  track('reply_start', { dishId: dish.id, commentId: commentId });
+}
+
+function cancelReply() {
+  replyTo = null;
+  document.getElementById('cmTarget').classList.remove('is-on');
+  document.getElementById('cmInput').placeholder = '说点什么…';
+}
+
 function sendComment() {
   const input = document.getElementById('cmInput');
   const v = input.value.trim();
   if (!v) return;
   if (!requireLogin()) return;
+
+  if (replyTo) {
+    // 回复他人：挂在被回复那条评论下面，不进主评论列表
+    //
+    // ⚠️ 后端目前只支持商家回评（comment.reply 是店家的），
+    // 用户之间的回复还没有对应接口。所以这里**只落本地**，
+    // 在线模式下也如此 —— 页面刷新后会丢，这是已知的简化。
+    // 加这个功能的目的是让原型的评论区不再"一个人自说自话"，
+    // 后端接口留到下一阶段（需要在 docs/05 里补一条契约）。
+    const list = MOCK.comments;
+    const target = list.find(c => c.id === replyTo.id);
+    if (target) {
+      if (!target.subReplies) target.subReplies = [];
+      target.subReplies.push({
+        id: 'sr_' + Date.now(),
+        userId: MOCK.currentUser.id,
+        userName: MOCK.currentUser.name,
+        content: v,
+        at: fmtNow()
+      });
+    }
+    input.value = '';
+    onInput();
+    cancelReply();
+    renderComments();
+    toast('已回复 ' + (target ? target.userName : ''));
+    track('reply_send', { dishId: dish.id, to: target ? target.userName : '' });
+    return;
+  }
 
   // 走统一写入口。原先这里只往本地 MOCK.comments 里塞一条 ——
   // 在线模式下评论根本没落库，刷新一下就没了。

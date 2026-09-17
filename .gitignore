@@ -48,6 +48,7 @@ logs/
 .shots-admin/
 .shots-merchant/
 .shots-flow/
+.shots-v2/
 
 # ---------- 数据库本地文件 ----------
 *.db

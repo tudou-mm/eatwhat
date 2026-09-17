@@ -343,10 +343,11 @@
     <div class="side-note__row"><span class="side-note__k">菜品</span><span class="side-note__v">永久保留，点击进菜品详情</span></div>
     <hr>
     <div class="side-note__row"><span class="side-note__k">打卡</span><span class="side-note__v">底部「我吃过这家」→ 滑动确认<br>滑动比点击更有仪式感</span></div>
-    <div class="side-note__row"><span class="side-note__k">校验</span><span class="side-note__v">本期不校验定位<br>二期 GPS · 三期扫码</span></div>
+    <div class="side-note__row"><span class="side-note__k">校验</span><span class="side-note__v">本期不校验定位，<b>但要登录</b><br>二期 GPS · 三期扫码</span></div>
     <hr>
+    <div class="side-note__row"><span class="side-note__k">统计</span><span class="side-note__v">三个数字都从真实数据算<br>不写死</span></div>
     <div class="text-12" style="color:rgba(255,255,255,.4)">
-      持久化用 localStorage，刷新后打卡状态保留
+      打卡记录存本地，刷新后状态保留
     </div>
   </div>
 </div>
@@ -355,7 +356,6 @@
 <script src="../assets/js/api.js"></script>
 <script>
 let shop = null;
-let checkinState = JSON.parse(localStorage.getItem('checkinShops') || '{}');
 
 /* ---------- 初始化 ---------- */
 (function init() {
@@ -376,14 +376,26 @@ function render() {
   document.getElementById('shopHours').textContent = shop.hours;
   document.getElementById('shopIntro').textContent = shop.intro;
 
-  document.getElementById('stDishes').textContent = shop.stats.dishes;
-  document.getElementById('stLikes').textContent = MOCK.fmtNum(shop.stats.likes);
+  const dishes = MOCK.getShopDishes(shop.id).filter(d => d.status !== 'removed');
 
-  const dishes = MOCK.getShopDishes(shop.id);
-  const extraCheckins = Object.values(MOCK._checkins).reduce((a, b) => a + b, 0);
-  const totalCheckins = shop.stats.checkins +
-    (checkinState[shop.id] ? 1 : 0);
-  document.getElementById('stCheckins').textContent = MOCK.fmtNum(totalCheckins);
+  /*
+   * 统计口径统一到「真实数据」上，不再拿写死的值糊。
+   *
+   * 三个数字的来源：
+   *   在售菜品 = 我的菜里 status !== removed 的条数
+   *   累计点赞 = 该店所有菜品 likes 之和
+   *   人吃过   = shop.stats.checkins（含我本地打的这一次）
+   *
+   * ⚠️ shop.stats.checkins 是服务端基数，我打卡后 doCheckinShop
+   * 已经把它 +1 了，所以**这里不能再叠一次**。
+   * 原实现写成 `shop.stats.checkins + (打卡过 ? 1 : 0)`，
+   * 再叠上 doCheckin() 里也会 +1 —— 两个地方都加，打一次卡数字跳两次。
+   */
+  const likeSum = dishes.reduce((a, d) => a + ((d.stats && d.stats.likes) || 0), 0);
+
+  document.getElementById('stDishes').textContent = dishes.length;
+  document.getElementById('stLikes').textContent = MOCK.fmtNum(likeSum);
+  document.getElementById('stCheckins').textContent = MOCK.fmtNum(shop.stats.checkins);
 
   document.getElementById('dishCount').textContent = '共 ' + dishes.length + ' 道';
 
@@ -423,9 +435,9 @@ function render() {
     `;
   }).join('');
 
-  // 打卡状态
+  // 打卡状态（读统一存储，刷新后仍然记得）
   const btn = document.getElementById('checkinBtn');
-  if (checkinState[shop.id]) {
+  if (MOCK.hasCheckedIn(shop.id)) {
     btn.classList.add('is-done');
     document.getElementById('checkinBtnText').textContent = '你已打卡过这家店';
   }
@@ -449,10 +461,13 @@ function doShare() {
 
 /* ---------- 打卡 ---------- */
 function openCheckin() {
-  if (checkinState[shop.id]) {
+  if (MOCK.hasCheckedIn(shop.id)) {
     toast('你今天已经打过卡啦');
     return;
   }
+  // 打卡是「记录我到过这家店」，必须知道是谁 —— 未登录先引导登录
+  if (!MOCK.guardLogin()) return;
+
   document.getElementById('slideMask').classList.add('is-open');
   document.getElementById('slideView').style.display = '';
   document.getElementById('doneView').style.display = 'none';
@@ -519,13 +534,13 @@ function resetSlide() {
 }
 
 function finish() {
-  checkinState[shop.id] = true;
-  localStorage.setItem('checkinShops', JSON.stringify(checkinState));
-  MOCK.doCheckin(MOCK.getShopDishes(shop.id)[0]?.id || 'd_001');
+  // 打卡统一走 MOCK.doCheckinShop：写 localStorage(记住打卡过)
+  // 并给 shop.stats.checkins +1。计数口径只有这一处，不再多处叠加。
+  const r = MOCK.doCheckinShop(shop.id);
 
   document.getElementById('slideView').style.display = 'none';
   document.getElementById('doneView').style.display = '';
-  document.getElementById('doneNum').textContent = MOCK.fmtNum(shop.stats.checkins);
+  document.getElementById('doneNum').textContent = MOCK.fmtNum(r.count);
 
   track('checkin_done', { shopId: shop.id, type: 'slide' });
 

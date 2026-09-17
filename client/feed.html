@@ -52,6 +52,16 @@
 
   .feed-tab.is-active { color: #fff; font-weight: 500; }
 
+  /* 筛选生效时，两个 Tab 都带个小红点 ——
+     用户切到「随心看」时容易忘了自己还在筛选态，导致看到的内容
+     比预期少却以为是 bug */
+  .feed-tab__dot {
+    display: none; position: absolute; top: 3px; right: -8px;
+    width: 6px; height: 6px; border-radius: 50%; background: #FE2C55;
+    box-shadow: 0 0 5px rgba(254,44,85,.9);
+  }
+  .feed-tabs.is-filtered .feed-tab__dot { display: block; }
+
   .feed-tab.is-active::after {
     content: ''; position: absolute; bottom: 0; left: 50%;
     transform: translateX(-50%); width: 22px; height: 3px;
@@ -133,6 +143,33 @@
 
   .fc__media { position: absolute; inset: 0; background: #111; }
   .fc__media img { width: 100%; height: 100%; object-fit: cover; }
+
+  /*
+   * 主图可点区域：点图片直接进菜品详情。
+   * 用绝对定位的透明层而不是给 img 挂 onclick ——
+   * 这样不会和右侧操作栏、底部信息区的点击打架（它们 z-index 更高）。
+   */
+  .fc__tap {
+    position: absolute; inset: 0; z-index: 5; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* 「查看详情」提示：只有首次进入时淡入提醒一下，不长期挡画面 */
+  .fc__tap-hint {
+    padding: 8px 16px; border-radius: 20px;
+    background: rgba(0,0,0,.45); backdrop-filter: blur(8px);
+    color: #fff; font-size: 13px; opacity: 0;
+    transform: scale(.9);
+    animation: tapHint 2.2s ease-out .8s 1 both;
+    pointer-events: none;
+  }
+
+  @keyframes tapHint {
+    0%   { opacity: 0; transform: scale(.9); }
+    18%  { opacity: 1; transform: scale(1); }
+    72%  { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(1); }
+  }
 
   .fc__shade {
     position: absolute; inset: 0; pointer-events: none;
@@ -353,9 +390,13 @@
         <span>•••  5G  ▮</span>
       </div>
 
-      <div class="feed-tabs">
-        <div class="feed-tab is-active" data-tab="nearby" onclick="switchTab('nearby')">附近</div>
-        <div class="feed-tab" data-tab="random" onclick="switchTab('random')">随心看</div>
+      <div class="feed-tabs" id="feedTabs">
+        <div class="feed-tab is-active" data-tab="nearby" onclick="switchTab('nearby')">
+          附近<span class="feed-tab__dot"></span>
+        </div>
+        <div class="feed-tab" data-tab="random" onclick="switchTab('random')">
+          随心看<span class="feed-tab__dot"></span>
+        </div>
       </div>
 
       <div class="filter-btn" id="filterBtn" onclick="location.href='filter.html'">⚙</div>
@@ -419,19 +460,21 @@
   <div class="side-note">
     <h3>交互说明</h3>
     <div class="side-note__row"><span class="side-note__k">滑动</span><span class="side-note__v">上下滑切换菜品（全屏吸顶）</span></div>
-    <div class="side-note__row"><span class="side-note__k">双 Tab</span><span class="side-note__v">附近＝置顶&gt;权重&gt;距离&gt;时间衰减<br>随心看＝随机且排除已浏览</span></div>
+    <div class="side-note__row"><span class="side-note__k">点图片</span><span class="side-note__v">进菜品详情（首次有提示）</span></div>
+    <div class="side-note__row"><span class="side-note__k">双 Tab</span><span class="side-note__v">附近＝置顶&gt;权重&gt;距离&gt;时间衰减<br>随心看＝随机且排除已浏览<br><b>来回切会记住各自的位置</b></span></div>
     <div class="side-note__row"><span class="side-note__k">点店名</span><span class="side-note__v">展开店铺卡片，可电话／导航／进店</span></div>
     <div class="side-note__row"><span class="side-note__k">更多</span><span class="side-note__v">分享／导航／电话／跳第三方收起在 ⋯ 里</span></div>
-    <div class="side-note__row"><span class="side-note__k">未登录</span><span class="side-note__v">点赞／收藏／评论会拦截并提示登录</span></div>
+    <div class="side-note__row"><span class="side-note__k">未登录</span><span class="side-note__v">点赞／收藏／评论弹出底部引导<br>（不用系统 confirm，移动端会被拦）</span></div>
     <hr>
     <div class="side-note__row"><span class="side-note__k">筛选</span><span class="side-note__v">右上角 ⚙ 进筛选页<br>条件<b>实时同步</b>，首页信息流跟着变</span></div>
-    <div class="side-note__row"><span class="side-note__k">筛选中</span><span class="side-note__v">顶部出现条件条，可一键清除</span></div>
+    <div class="side-note__row"><span class="side-note__k">筛选中</span><span class="side-note__v">顶部条件条 + 两个 Tab 都带红点<br>可一键清除</span></div>
     <div class="side-note__row"><span class="side-note__k">筛选后</span><span class="side-note__v">取每家店<b>符合条件的最新一条</b><br>不限 24h，避免小众条件筛空</span></div>
     <hr>
     <div class="side-note__row"><span class="side-note__k">每店一条</span><span class="side-note__v">首页每店只露最新一条，不刷屏</span></div>
     <div class="side-note__row"><span class="side-note__k">时间衰减</span><span class="side-note__v">超 24h 权重归零但不删除，仍可刷到</span></div>
     <div class="side-note__row"><span class="side-note__k">内容不足</span><span class="side-note__v">不足 3 条时回退旧内容<br><b>仅未筛选时生效</b></span></div>
     <hr>
+    <div class="side-note__row"><span class="side-note__k">互动</span><span class="side-note__v">点赞／收藏<b>落本地</b>（刷新不丢）<br>在线时同步通知后端</span></div>
     <div class="text-12" style="color:rgba(255,255,255,.4)">提示：改 <code>mock.js</code> 里 <code>currentUser.loggedIn</code> 可切换登录态</div>
   </div>
 
@@ -443,8 +486,14 @@
 const S = {
   tab: 'nearby',
   feed: [],
-  liked: {}, favorited: {}, browsed: [],
-  current: null
+  current: null,
+  /*
+   * 两个 Tab 各自的滚动位置。
+   * 来回切 Tab 时若每次都跳回第一条，用户会觉得「我刚才看的菜去哪了」——
+   * 尤其「随心看」是随机序，重排后连位置都找不回来。
+   */
+  scroll: { nearby: 0, random: 0 },
+  hintPlayed: {}     // 每个 Tab 只播一次「查看详情」提示
 };
 
 /* ---------- 初始化 ---------- */
@@ -455,11 +504,12 @@ const S = {
 
 /* ---------- 筛选状态 ---------- */
 
-/* 同步顶部筛选条与齿轮按钮的显示状态 */
+/* 同步顶部筛选条、齿轮按钮与 Tab 小红点的显示状态 */
 function updateFilterUI() {
   const active = MOCK.filterActive();
   document.getElementById('filterBar').classList.toggle('is-on', active);
   document.getElementById('filterBtn').classList.toggle('is-on', active);
+  document.getElementById('feedTabs').classList.toggle('is-filtered', active);
   if (active) {
     document.getElementById('filterText').textContent = '筛选：' + MOCK.filterLabel();
   }
@@ -470,6 +520,7 @@ function clearFilter() {
   MOCK.clearFilter();
   updateFilterUI();
   closeShopCard();
+  S.scroll = { nearby: 0, random: 0 };
   document.getElementById('feed').scrollTop = 0;
   buildFeed();
   track('filter_clear', {});
@@ -482,6 +533,7 @@ function clearFilter() {
 window.addEventListener('pageshow', e => {
   if (e.persisted) {
     updateFilterUI();
+    S.scroll = { nearby: 0, random: 0 };
     document.getElementById('feed').scrollTop = 0;
     buildFeed();
   }
@@ -495,7 +547,8 @@ function buildFeed() {
 
   // 随心看：排除已浏览
   if (S.tab === 'random') {
-    const unread = list.filter(d => !S.browsed.includes(d.id));
+    const browsed = MOCK.getBrowsed();
+    const unread = list.filter(d => !browsed.includes(d.id));
     list = unread.length ? unread : list;
   }
 
@@ -528,15 +581,22 @@ function renderFeed() {
   el.innerHTML = S.feed.map((d, i) => {
     const shop = MOCK.getShop(d.shopId);
     const tier = MOCK.priceTiers.find(t => t.id === d.priceTierId);
-    const liked = !!S.liked[d.id];
-    const faved = !!S.favorited[d.id];
+    // 互动状态从 localStorage 读 —— 切 Tab / 刷新 / 从详情页回来都还在
+    const liked = MOCK.isInteracted('liked', d.id);
+    const faved = MOCK.isInteracted('favorited', d.id);
     const cover = d.type === 'video' ? (d.cover || d.media[0]) : d.media[0];
+    const showHint = !S.hintPlayed[S.tab];
 
     return `
     <div class="fc" data-id="${d.id}">
       <div class="fc__media"><img src="${cover}" loading="lazy"></div>
       ${d.type === 'video' ? '<div class="fc__play">▶</div>' : ''}
       <div class="fc__shade"></div>
+
+      <!-- 点主图进菜品详情：用户看到一张大图的第一直觉就是「点进去看」 -->
+      <div class="fc__tap" onclick="openDish('${d.id}')">
+        ${showHint ? '<div class="fc__tap-hint">轻点图片查看详情</div>' : ''}
+      </div>
 
       <div class="fc__body">
         <div class="fc__info">
@@ -579,13 +639,16 @@ function renderFeed() {
     </div>`;
   }).join('');
 
-  // 记录浏览
+  // 记一次提示已播：避免每次滚回来都再闪一次
+  S.hintPlayed[S.tab] = true;
+
+  // 记录浏览 + 同步当前条目
   const io = new IntersectionObserver(entries => {
     entries.forEach(e => {
       if (e.isIntersecting) {
-        const id = e.target.dataset.id;
-        if (!S.browsed.includes(id)) S.browsed.push(id);
-        S.current = id;
+        // 写进统一存储（个人中心的「浏览记录」和随心看的排除都读它）
+        MOCK.addBrowsed(e.target.dataset.id);
+        S.current = e.target.dataset.id;
       }
     });
   }, { threshold: 0.6 });
@@ -596,43 +659,64 @@ function renderFeed() {
 /* ---------- Tab ---------- */
 function switchTab(tab) {
   if (S.tab === tab) return;
+  const feed = document.getElementById('feed');
+
+  // 离开前存下当前 Tab 的滚动位置（按条目索引，比 px 更抗布局变化）
+  S.scroll[S.tab] = feed.scrollTop;
+
   S.tab = tab;
   document.querySelectorAll('.feed-tab').forEach(t => {
     t.classList.toggle('is-active', t.dataset.tab === tab);
   });
   closeShopCard();
-  document.getElementById('feed').scrollTop = 0;
   buildFeed();
+
+  // 回到这个 Tab 上次的位置
+  const top = S.scroll[tab] || 0;
+  if (top > 0) {
+    // 等一帧让新内容完成布局，否则 scrollTop 会被浏览器重置为 0
+    requestAnimationFrame(() => { feed.scrollTop = top; });
+  }
 }
 
 /* ---------- 登录拦截 ---------- */
+/*
+ * 用页面内浮层代替 confirm()。
+ * confirm 在 iOS Safari 会被拦（点了没反应），样式也不可控，
+ * 深色沉浸式页面里弹一个系统灰框非常出戏。
+ */
 function requireLogin() {
-  if (MOCK.currentUser.loggedIn) return true;
-  if (confirm('登录后才能点赞、收藏和评论，现在去登录？')) {
-    location.href = 'login.html';
-  }
-  return false;
+  return MOCK.guardLogin();
 }
 
 /* ---------- 互动 ---------- */
+/*
+ * 点赞 / 收藏统一走 MOCK.toggleInteract：
+ * 本地先落盘（刷新翻页都不丢），在线时顺手通知后端。
+ * 页面只负责把返回的新状态画到按钮上。
+ */
 function toggleLike(id, el) {
   if (!requireLogin()) return;
-  S.liked[id] = !S.liked[id];
-  const d = MOCK.getDish(id);
-  d.stats.likes += S.liked[id] ? 1 : -1;
-  el.classList.toggle('is-on', S.liked[id]);
-  el.querySelector('.act__num').textContent = MOCK.fmtNum(d.stats.likes);
-  track('like', { dishId: id, on: S.liked[id] });
+  const r = MOCK.toggleInteract('liked', id);
+  el.classList.toggle('is-on', r.on);
+  el.querySelector('.act__num').textContent = MOCK.fmtNum(r.count);
+  track('like', { dishId: id, on: r.on });
 }
 
 function toggleFav(id, el) {
   if (!requireLogin()) return;
-  S.favorited[id] = !S.favorited[id];
-  const d = MOCK.getDish(id);
-  d.stats.favorites += S.favorited[id] ? 1 : -1;
-  el.classList.toggle('is-on', S.favorited[id]);
-  el.querySelector('.act__num').textContent = MOCK.fmtNum(d.stats.favorites);
-  track('favorite', { dishId: id, on: S.favorited[id] });
+  const r = MOCK.toggleInteract('favorited', id);
+  el.classList.toggle('is-on', r.on);
+  el.querySelector('.act__num').textContent = MOCK.fmtNum(r.count);
+  track('favorite', { dishId: id, on: r.on });
+}
+
+/*
+ * 点主图 / 点评论图标都进详情页。
+ * 进详情页会记一次浏览（详情页自己会记），这里不用重复写。
+ */
+function openDish(id) {
+  location.href = 'dish.html?id=' + id;
 }
 
 function goComment(id) {
