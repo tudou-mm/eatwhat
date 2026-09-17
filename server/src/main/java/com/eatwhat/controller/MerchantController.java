@@ -78,16 +78,23 @@ public class MerchantController {
     }
 
     /**
-     * 入驻申请：落成一家待审核店铺（客户端在审核通过前看不到它）。
+     * 入驻申请：落成一家「待审核」店铺（客户端在审核通过前看不到它）。
      *
      * 这是**唯一一个公开的商家接口**（WebConfig 里排除了鉴权）——
      * 申请的人此刻还没有账号，拦掉就成了「想入驻先登录」。
      * 代价是没有防刷，上线前要加图形验证码或频控。
+     *
+     * <p>额外返回实体（不只是视图）供 {@code DataSeeder} 复用：
+     * 演示数据里的待审核店铺就是这个方法建出来的，保证「演示的待审」
+     * 和「真实入驻的待审」字段口径完全一致。
      */
+    public Shop applyPending(Map<String, Object> body) {
+        return shopService.createPending(body);
+    }
+
     @PostMapping("/apply")
     public R<Map<String, Object>> apply(@RequestBody Map<String, Object> body) {
-        Shop s = shopService.createPending(body);
-        return R.ok(views.shop(s));
+        return R.ok(views.shop(applyPending(body)));
     }
 
     /** 工作台：店铺状态 + 冷却剩余秒数 + 今日数据 */
@@ -215,6 +222,19 @@ public class MerchantController {
         if (body.get("hours") != null) s.setHours(body.get("hours").toString());
         if (body.get("cover") != null) s.setCover(body.get("cover").toString());
         if (body.get("logo") != null) s.setLogo(body.get("logo").toString());
+        // 坐标：改了经纬度就必须重算 distance —— 否则地图上挪了两公里，
+        // 客户端「附近」里还是按旧位置排，两边对不上。
+        // 只认「两个都传了」的情况，传半边会让店铺落到 (新lat, 旧lng) 这种不存在的位置。
+        Double lat = shopService.toDouble(body.get("lat"));
+        Double lng = shopService.toDouble(body.get("lng"));
+        boolean moved = lat != null && lng != null
+                && (!lat.equals(s.getLat()) || !lng.equals(s.getLng()));
+        if (lat != null) s.setLat(lat);
+        if (lng != null) s.setLng(lng);
+        if (moved) {
+            Shop saved = shopService.save(s);
+            return R.ok(views.shop(shopService.refreshDistance(saved)));
+        }
         return R.ok(views.shop(shopService.save(s)));
     }
 

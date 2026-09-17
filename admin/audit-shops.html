@@ -269,6 +269,15 @@ function renderDetail(s) {
         <div class="info-item__v">${s.address}</div>
       </div>
 
+      <!-- 商家自报的坐标。审核时要能看见 —— 门头图和地址都对不上号的申请，
+           坐标也往往是随手点的，这个数字是判断依据之一。 -->
+      <div class="info-item">
+        <div class="info-item__k">地图选点</div>
+        <div class="info-item__v" style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:${coordOk(s) ? 'var(--text-2)' : 'var(--danger, #D93025)'}">
+          ${coordText(s)}
+        </div>
+      </div>
+
       <div class="map-mini">
         <div class="map-mini__pin">📍</div>
       </div>
@@ -335,18 +344,50 @@ function renderDetail(s) {
  *   后端不在 → 直接改内存，原型照样能演示
  * 两种模式下这段代码完全一样。
  */
+
+/** 是否有可用于算距离的坐标 */
+function coordOk(s) {
+  return s.lat != null && s.lng != null;
+}
+
+function coordText(s) {
+  if (!coordOk(s)) return '未选点 —— 通过后无法计算距离，会排在「附近」末尾';
+  return Number(s.lat).toFixed(6) + ', ' + Number(s.lng).toFixed(6);
+}
+
+/**
+ * 通过并上线。
+ *
+ * 没坐标时要**二次确认**：后端会拒（400），前端先说清楚原因再让运营决定。
+ * 加这一层是因为「点通过 → 弹一个红色报错」体验很差，运营也不知道下一步该干嘛；
+ * 换成「这家店没选点，确定强行上线吗？/ 建议先驳回让商家补选」，
+ * 运营一眼就知道该怎么处理。
+ */
 function approve() {
   if (!current) return;
-  if (!confirm(`确定通过「${current.name}」的入驻申请？通过后该店铺即可发布菜品。`)) return;
+  const noCoord = !coordOk(current);
+
+  if (noCoord) {
+    const go = confirm(
+      `「${current.name}」没有地图选点，通过后无法计算距离，会排在推荐列表末尾。\n\n` +
+      `确定强行上线吗？\n` +
+      `（点「取消」返回列表，建议先驳回让商家补选位置）`
+    );
+    if (!go) return;
+  } else if (!confirm(`确定通过「${current.name}」的入驻申请？通过后该店铺即可发布菜品。`)) {
+    return;
+  }
 
   const id = current.id, name = current.name;
-  const r = MOCK.act('audit.approve', { id: id, reviewer: '平台运营' });
+  const r = MOCK.act('audit.approve', { id: id, reviewer: '平台运营', force: noCoord });
   if (!r.ok) { toast(r.msg || '操作失败，请重试'); return; }
 
   current = null;
   render();
-  toast(`已通过「${name}」，店铺已上线`);
-  track('admin_approve_shop', { shopId: id });
+  toast(noCoord
+    ? `已通过「${name}」（未选点，不进距离排序）`
+    : `已通过「${name}」，店铺已上线`);
+  track('admin_approve_shop', { shopId: id, forced: noCoord });
 }
 
 function openReject() {

@@ -11,6 +11,10 @@ secrets.yml
 application-local.yml
 application-prod.yml
 
+# 高德地图 Key（按 Key 维度算配额，泄露=送额度）—— 正式 Key 只留本地
+assets/data/amap-key.js
+amap-key.js
+
 # ---------- Java / Maven ----------
 server/target/
 *.class
@@ -49,6 +53,8 @@ logs/
 .shots-merchant/
 .shots-flow/
 .shots-v2/
+.shots-mappicker/
+.dev.log
 
 # ---------- 数据库本地文件 ----------
 *.db

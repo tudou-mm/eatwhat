@@ -20,6 +20,18 @@ DataSeeder.java 是后端的数据源。两边各写一份一定会漂移 ——
 用法
 ----
     python export_mock.py [后端地址]      # 默认 http://127.0.0.1:8080
+
+鉴权
+----
+后端加了 JWT 之后，平台端接口（/admin/**）没 token 会直接 401。
+三条路，任选其一（脚本按顺序试）：
+
+  1. 环境变量 EATWHAT_ADMIN_TOKEN   —— 已有 token 直接传进来
+  2. 环境变量 EATWHAT_ADMIN_PASSWORD —— 账号密码，脚本自己换 token
+  3. 都没有 → 用内置的演示账号 admin/admin123 去换
+
+第 3 条是为了「clone 下来就能跑」：演示库的账号是公开的，不算秘密。
+真上线了记得显式传 1 或 2，别依赖默认值。
 """
 import io
 import json
@@ -30,6 +42,21 @@ import urllib.request
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8080").rstrip("/")
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 TARGET = os.path.join(ROOT, "assets", "data", "mock.js")
+
+_TOKEN = None
+
+
+def _login():
+    """换一个平台端 token。优先环境变量，其次内置演示账号。"""
+    pwd = os.environ.get("EATWHAT_ADMIN_PASSWORD") or "admin123"
+    body = json.dumps({"role": "admin", "account": "admin", "password": pwd}).encode("utf-8")
+    req = urllib.request.Request(BASE + "/api/auth/login", data=body,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        j = json.loads(r.read().decode("utf-8"))
+    if j.get("code") != 0:
+        raise SystemExit("登录失败：%s（可设 EATWHAT_ADMIN_PASSWORD 覆盖密码）" % j.get("msg"))
+    return j["data"]["token"]
 
 # 切分点用标记而不是行号，脚本改动后行号会漂。
 # 数据段 / 平台段的起点都要「既认原始手写标记、又认本脚本自己写出去的标记」，
@@ -61,8 +88,20 @@ WIDTH = 116
 
 
 def api(path):
-    with urllib.request.urlopen(BASE + "/api" + path, timeout=15) as r:
-        j = json.loads(r.read().decode("utf-8"))
+    global _TOKEN
+    if _TOKEN is None:
+        _TOKEN = os.environ.get("EATWHAT_ADMIN_TOKEN") or _login()
+    req = urllib.request.Request(BASE + "/api" + path,
+                                 headers={"Authorization": "Bearer " + _TOKEN})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            j = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            raise SystemExit("接口 %s 返回 401：token 失效或不匹配当前 data 段。\n"
+                             "  后端重启过（H2 内存库 = 重启即换库）会导致旧 token 作废，重跑一次即可。"
+                             % path)
+        raise
     if j.get("code") != 0:
         raise SystemExit("接口 %s 返回异常：%s" % (path, j.get("msg")))
     return j["data"]

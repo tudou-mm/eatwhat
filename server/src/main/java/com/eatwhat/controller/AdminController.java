@@ -145,12 +145,21 @@ public class AdminController {
         return R.ok(views.shops(shopService.listPending()));
     }
 
-    /** 审核通过：商家上线，客户端立刻可见 */
+    /**
+     * 审核通过：商家上线，客户端立刻可见。
+     *
+     * 这一刻会把商家选的坐标换算成 distance 落库（见 ShopService.approve），
+     * 该店从此刻起才真正进入客户端「附近」排序。
+     *
+     * {@code force=true} 用于「没有坐标也强行上线」，此时 distance 保持 null
+     * （排在末尾），**绝不**拿商家自报的坐标当权威值。
+     */
     @PostMapping("/audit/{id}/approve")
     public R<Map<String, Object>> approve(@PathVariable String id,
                                           @RequestBody(required = false) Map<String, Object> body) {
         String reviewer = body == null ? null : str(body.get("reviewer"));
-        return R.ok(views.shop(shopService.approve(id, reviewer)));
+        boolean force = body != null && Boolean.TRUE.equals(body.get("force"));
+        return R.ok(views.shop(shopService.approve(id, reviewer, force)));
     }
 
     /** 审核驳回：必须填理由 */

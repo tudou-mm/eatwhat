@@ -240,7 +240,13 @@ def main():
 
     # ================= 4. 文件上传 =================
     print("\n[4] 文件上传")
-    body, ct = multipart("a.png", PNG, "image/png")
+    # ⚠️ 原始文件名故意带上路径穿越意图，且**不能**用 'a.png' 这种短名：
+    #    落盘名是 UUID（如 3f2b...-a.png），UUID 末位有 1/16 概率正好是 'a'，
+    #    于是 URL 结尾成了 '...a.png'，`"a.png" not in url` 就会被误判成失败
+    #    —— 一个 1/16 概率的假红，查起来极其费劲。
+    #    换成 'evil' 就没这问题：UUID 是十六进制，不可能出现 v/i/l。
+    ORIG_NAME = "../../evil.png"
+    body, ct = multipart(ORIG_NAME, PNG, "image/png")
     st, j, _ = call("POST", "/api/upload", raw=body, ct=ct)
     check("无 token 上传 → 401", st == 401, "http=%s" % st)
 
@@ -254,7 +260,8 @@ def main():
         check("size 与源文件一致", up.get("size") == len(PNG),
               "%s vs %s" % (up.get("size"), len(PNG)))
         check("落盘名不含原始文件名（防路径穿越）",
-              "a.png" not in up.get("url", ""), up.get("url"))
+              "evil" not in up.get("url", "") and ".." not in up.get("url", ""),
+              up.get("url"))
 
         st2, raw, _ = call("GET", up["relative"])
         check("上传后能按 url 取回", st2 == 200, "http=%s" % st2)

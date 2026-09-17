@@ -1,6 +1,7 @@
 package com.eatwhat.service;
 
 import com.eatwhat.common.BizException;
+import com.eatwhat.common.DistanceCalculator;
 import com.eatwhat.entity.Shop;
 import com.eatwhat.repository.ShopRepository;
 import org.springframework.stereotype.Service;
@@ -74,11 +75,26 @@ public class ShopService {
     /**
      * 审核通过：pending → normal。
      * 只有 pending 状态才允许审核，避免对已在营店铺重复操作。
+     *
+     * ⚠️ 这里同时是**地理信息的权威化闸门**（对应 createPending 注释第 2 点）：
+     * pending 期间 lat/lng/distance 一律不入排序（distance 为 null 自然排在末尾）；
+     * 只有审核通过这一刻，才用平台侧坐标把 distance 补上，这家店从此进入「附近」排序。
+     *
+     * @param force 平台强制通过：允许在没有坐标时也上线，distance 保持 null
+     *              （即「不进距离排序」，宁可排在末尾也不能用商家自报的坐标冒充权威值）
      */
-    public Shop approve(String id, String reviewer) {
+    public Shop approve(String id, String reviewer, boolean force) {
         Shop s = get(id);
         if (!"pending".equals(s.getStatus())) {
             throw new BizException("该商家当前状态为「" + statusName(s.getStatus()) + "」，无需重复审核");
+        }
+        if (s.getLat() == null || s.getLng() == null) {
+            if (!force) {
+                throw new BizException(400, "该申请未提供有效坐标，无法计算距离。请驳回让商家重新选点，或勾选强制通过（将不进距离排序）");
+            }
+            s.setDistance(null);
+        } else {
+            s.setDistance(DistanceCalculator.toCityCenter(s.getLat(), s.getLng()));
         }
         s.setStatus("normal");
         s.setReviewer(reviewer == null || reviewer.isBlank() ? "平台运营" : reviewer);
@@ -249,8 +265,11 @@ public class ShopService {
 
         s.setStatus("pending");
         s.setDistance(null);      // 见上文第 2 点
-        s.setLat(null);
-        s.setLng(null);
+        // 商家在地图上选的坐标 —— 有就存，没有留 null。
+        // 商家端自报的坐标只做「落库 + 审核参考」，**不参与推荐排序**：
+        // 排序用的 distance 必须是审核通过时才算的权威值（见 approve）。
+        s.setLat(num(body.get("lat")));
+        s.setLng(num(body.get("lng")));
         s.setCanPostToday(false); // 没过审谈不上发布
         s.setWeight(0);
         s.setPinned(false);
@@ -258,6 +277,45 @@ public class ShopService {
         s.setDailyLimit(((Number) rule.get("dailyLimit")).intValue());
         s.setSubmittedAt(now());
         return repo.save(s);
+    }
+
+    /**
+     * 宽松取 Double：数字直接转，空串 / null / 非数字一律 null。
+     * 不用 {@code Double.parseDouble} 裸转 —— 前端 input 空值传 "" 会直接抛异常。
+     *
+     * public 是因为 Controller 也要用：坐标校验必须和落库用同一套宽松规则，
+     * 不然「Controller 判成有值、Service 判成 null」又是一处对不上的口径。
+     */
+    public Double toDouble(Object o) {
+        return num(o);
+    }
+
+    /**
+     * 按当前 lat/lng 重算 distance 并落库。
+     *
+     * 商家改坐标后必须调它 —— distance 是派生字段，改了源头不算这一步，
+     * 客户端「附近」里还是按旧位置排序。
+     * 坐标不全（任一为 null）时把 distance 清成 null：宁可排末尾，也不留一个错的旧距离。
+     */
+    public Shop refreshDistance(Shop s) {
+        if (s.getLat() == null || s.getLng() == null) {
+            s.setDistance(null);
+        } else {
+            s.setDistance(DistanceCalculator.toCityCenter(s.getCity(), s.getLat(), s.getLng()));
+        }
+        return repo.save(s);
+    }
+
+    private Double num(Object o) {
+        if (o instanceof Number n) return n.doubleValue();
+        if (o == null) return null;
+        String t = o.toString().trim();
+        if (t.isEmpty()) return null;
+        try {
+            return Double.parseDouble(t);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private String str(Object o) { return o == null ? null : o.toString(); }

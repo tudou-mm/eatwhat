@@ -881,12 +881,17 @@
     // ---------- 商家审核 ----------
     'audit.approve': {
       path: function (p) { return '/admin/audit/' + p.id + '/approve'; },
-      body: function (p) { return { reviewer: p.reviewer || '平台运营' }; },
+      body: function (p) { return { reviewer: p.reviewer || '平台运营', force: !!p.force }; },
+      // 本地没有 DistanceCalculator，用「到市中心的近似距离」补齐：
+      // 与后端 Haversine 口径一致（成都锚点 30.6570, 104.0658），
+      // 不做这件事的话，本地模式审核通过的店 distance 永远是 null，
+      // 会静默排到「附近」列表末尾 —— 看起来像审核没生效。
       local: function (p) {
         var M = window.MOCK;
         var s = removeById(M.pendingShops, p.id);
         if (!s) return false;
         s.status = 'normal';
+        s.distance = localDistanceKm(s.lat, s.lng);
         s.reviewer = p.reviewer || '平台运营';
         s.reviewedAt = nowStr();
         upsert(M.approvedShops, s);
@@ -1251,13 +1256,17 @@
       body: function (p) {
         return { name: p.name, cuisine: p.cuisine, intro: p.intro,
                  address: p.address, phone: p.phone, hours: p.hours,
-                 cover: p.cover, logo: p.logo };
+                 cover: p.cover, logo: p.logo,
+                 // 重选点后一起提交，后端会顺手重算 distance
+                 lat: p.lat, lng: p.lng };
       },
       local: function (p) {
         var s = cache.me || findShop(merchantShopId());
         if (!s) return false;
         ['name', 'cuisine', 'intro', 'address', 'phone', 'hours', 'cover', 'logo']
           .forEach(function (k) { if (p[k] != null) s[k] = p[k]; });
+        // 坐标两个都传才认 —— 只传半边会落到 (新lat, 旧lng) 这个不存在的位置
+        if (p.lat != null && p.lng != null) { s.lat = p.lat; s.lng = p.lng; }
         return true;
       },
       apply: function (data) {
@@ -1307,7 +1316,10 @@
         return { name: p.name, cuisine: p.cuisine, phone: p.phone,
                  address: p.address, city: p.city, district: p.district,
                  hours: p.hours, intro: p.intro,
-                 cover: p.cover, logo: p.logo };
+                 cover: p.cover, logo: p.logo,
+                 // 地图选点结果。没选点时为 undefined，序列化后字段直接消失，
+                 // 后端 num() 收到 null → 存 null（不是 0，0 会被当成「就在你脚下」）
+                 lat: p.lat, lng: p.lng };
       },
       local: function (p) {
         var M = window.MOCK;
@@ -1318,6 +1330,8 @@
           address: p.address, city: p.city || '成都市', district: p.district || '武侯区',
           hours: p.hours, intro: p.intro,
           cover: p.cover, logo: p.logo || p.cover,
+          lat: p.lat != null ? p.lat : null,   // 商家选的坐标：存下来但此刻不参与排序
+          lng: p.lng != null ? p.lng : null,
           status: 'pending',
           distance: null,          // 待审核店没有定位，见 docs/00 的坑位说明
           weight: 0, pinned: false, canPostToday: false,
@@ -1403,6 +1417,29 @@
     function p(n) { return (n < 10 ? '0' : '') + n; }
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
            ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  /**
+   * 离线模式下的「到本市中心点」距离（km，一位小数）。
+   *
+   * 这是后端 {@code DistanceCalculator} 的镜像实现 —— 本地假数据模式没有 Java 可调，
+   * 但审核通过时 distance 必须落地，否则那家店在「附近」里永远排最后。
+   *
+   * ⚠️ 两边算法必须一起改：改了后端 Haversine 而忘了这里，
+   * 就会出现「本地模式审核的店距离 3.2km、连后端后变成 2.7km」这种鬼故事。
+   */
+  var CITY_CENTER = { lat: 30.6570, lng: 104.0658 };  // 成都天府广场（与后端一致）
+
+  function localDistanceKm(lat, lng) {
+    if (lat == null || lng == null) return null;
+    var R = 6371.0;
+    var rad = Math.PI / 180;
+    var dLat = (CITY_CENTER.lat - lat) * rad;
+    var dLng = (CITY_CENTER.lng - lng) * rad;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat * rad) * Math.cos(CITY_CENTER.lat * rad) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return Math.round(R * 2 * Math.asin(Math.sqrt(a)) * 10) / 10;
   }
 
   // ================= 客户端互动（本地 + 后端双写） =================

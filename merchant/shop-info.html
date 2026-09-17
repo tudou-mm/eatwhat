@@ -33,6 +33,13 @@
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%);
     font-size: 26px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.3));
   }
+  .map-hint {
+    position: absolute; bottom: 12px; left: 12px; right: 12px;
+    background: rgba(255,255,255,.95); padding: 8px 12px; border-radius: 8px;
+    font-size: 12px; color: var(--text-2); box-shadow: var(--shadow-sm);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .map-box.is-picked { background: #F3FBF6; }
 
   .photo-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
   .pg-item {
@@ -169,10 +176,11 @@
               <input class="input" id="fAddr" readonly>
               <button class="btn btn--outline" style="flex-shrink:0" onclick="pickMap()">重新选点</button>
             </div>
-            <div class="map-box">
+            <div class="map-box" id="mapBox">
               <div class="map-pin">📍</div>
+              <div class="map-hint" id="mapHint">加载中…</div>
             </div>
-            <div class="field__hint">经纬度影响「附近」推荐的距离排序</div>
+            <div class="field__hint">经纬度影响「附近」推荐的距离排序；改了位置保存后按新坐标重算</div>
           </div>
 
           <div class="field">
@@ -215,10 +223,16 @@
 
 <script src="../assets/data/mock.js"></script>
 <script src="../assets/js/api.js"></script>
+<script src="../assets/data/amap-key.js"></script>
+<script src="../assets/js/map-picker.js"></script>
 <script>
 let shop = null;
 let photos = [];
 let coverOverride = null;   // 换过但还没保存的门头图
+
+// 重选后的坐标 —— 和 coverOverride 同一套路：只存「待保存」的值，
+// 不直接写 shop.lat/lng。否则用户点了选点又点取消关页面，缓存里已经脏了。
+let coordOverride = null;
 
 (function init() {
   shop = MOCK.getShop(MOCK.currentMerchant.shopId);
@@ -237,6 +251,8 @@ let coverOverride = null;   // 换过但还没保存的门头图
   const [o, c] = shop.hours.split(' - ');
   document.getElementById('fOpen').value = o;
   document.getElementById('fClose').value = c;
+
+  renderPin();
 
   photos = [
     'https://picsum.photos/seed/shopph1/300/300',
@@ -310,8 +326,58 @@ function onCoverPicked(ev) {
   }).catch(e => toast('上传失败：' + e.message));
 }
 
+/**
+ * 重选位置。读完回填 fAddr + coordOverride，保存时才落库。
+ *
+ * 注意「重选点不重新审核」这个口径：审核审的是**店铺资质**（门头图、经营主体），
+ * 位置只是排序输入。所以这里不像门头图那样标「需重新审核」。
+ */
 function pickMap() {
-  toast('已重新选点（原型模拟）');
+  if (!shop) return;
+  const cur = coordOverride || { lat: shop.lat, lng: shop.lng };
+  MapPicker.open({
+    current: cur,
+    onPick(p) {
+      coordOverride = p;
+      // 没解析出地址就别动输入框（见 apply.html 里的同名说明）
+      if (p.address) {
+        document.getElementById('fAddr').value = p.address;
+        toast('位置已改，保存后按新坐标重算距离');
+      } else {
+        toast('已取到坐标，地址请手动确认后保存');
+      }
+      renderPin();
+    }
+  });
+}
+
+/**
+ * 位置卡。三种状态要分得清：
+ *   有坐标 → 显示地址 + 坐标
+ *   有地址没坐标（老数据 / 入驻时没选点）→ 提示去重选，**不是**显示一个假坐标
+ *   都没有 → 提示还没设位置
+ */
+function renderPin() {
+  const box = document.getElementById('mapBox');
+  const hint = document.getElementById('mapHint');
+  if (!box || !hint || !shop) return;   // 节点缺失时静默退出，别让一个装饰性的卡崩掉整页
+  const lat = coordOverride ? coordOverride.lat : shop.lat;
+  const lng = coordOverride ? coordOverride.lng : shop.lng;
+  const addr = coordOverride ? coordOverride.address : shop.address;
+
+  if (lat == null || lng == null) {
+    box.classList.remove('is-picked');
+    hint.innerHTML = addr
+      ? '这家店还没有坐标（入驻时未选点），点「重新选点」补上<br>' +
+        '<span style="color:#B0B5BD">没有坐标的店在「附近」里会排到最后</span>'
+      : '还没设置位置，点「重新选点」在地图上定位';
+    return;
+  }
+  box.classList.add('is-picked');
+  hint.innerHTML =
+    (addr || '已定位') +
+    '<div style="margin-top:3px;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#B0B5BD">' +
+    Number(lat).toFixed(6) + ', ' + Number(lng).toFixed(6) + '</div>';
 }
 
 function save() {
@@ -331,15 +397,21 @@ function save() {
     hours: document.getElementById('fOpen').value + ' - ' + document.getElementById('fClose').value
   };
   if (coverOverride) { payload.cover = coverOverride; payload.logo = coverOverride; }
+  // 坐标两个一起传 —— 后端只认成对出现（传半边会落到不存在的位置）
+  if (coordOverride) { payload.lat = coordOverride.lat; payload.lng = coordOverride.lng; }
 
   // 落库：在线走后端，离线改本地内存
   const r = MOCK.act('merchant.shop.update', payload);
   if (!r.ok) { toast('保存失败：' + (r.msg || '未知错误')); return; }
 
   const saved = r.data || shop;
+  // 后端改了坐标会顺手重算 distance —— 把返回的权威值整体接过来，
+  // 别只更新几个字段，否则 distance 还是旧的
   shop = saved;
   coverOverride = null;
+  coordOverride = null;
   document.getElementById('coverImg').src = saved.cover;
+  renderPin();
 
   const needReview = oldAddr !== saved.address || oldCover !== saved.cover;
   toast(needReview ? '已保存，敏感信息将重新审核' : '已保存');

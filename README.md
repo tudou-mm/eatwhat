@@ -23,7 +23,9 @@
 ├── assets/
 │   ├── css/base.css        设计系统（全站唯一）
 │   ├── js/api.js           后端适配层（一键切换真假数据）
-│   └── data/mock.js        假数据 + 工具函数（唯一数据源）
+│   ├── js/map-picker.js    地图选点组件（高德 SDK + 三级降级）
+│   ├── data/mock.js        假数据 + 工具函数（唯一数据源）
+│   └── data/amap-key.js    高德 Key 配置（**不进 git**，换机需重建，见下）
 ├── client/                 客户端 6 页   食客刷菜
 ├── merchant/               商家端 8 页   发菜、管评论
 ├── admin/                  平台端 9 页   审核、排名、规则、处罚
@@ -101,6 +103,42 @@ localStorage.setItem('useApi', '1'); location.reload();
 写操作走统一入口 `MOCK.act(action, payload)`：在线时落库并回写内存，离线时只改内存。
 所以「平台点一下 → 客户端立刻变」这条链路是通的。
 
+### 配置高德地图 Key（换机器必看）
+
+商家入驻选点、店铺资料改位置都要用地图。Key 放在 `assets/data/amap-key.js`，
+**这个文件被 `.gitignore` 排除**（Key 泄露 = 把日配额送人），所以**换电脑后需要重建**：
+
+```js
+window.__EATWHAT_AMAP_CFG__ = {
+  keys: ['你的高德Key'],
+  securityJsCode: '',      // 只有「Web端(JS API)」类型的 Key 才有
+  restFallback: true
+};
+```
+
+**不配也能用** —— 会自动降级到内置的 40 个成都真实地标列表（可搜索），
+选出来的坐标是真的，能正常参与后端距离计算。只是没有真地图底图。
+
+⚠️ **高德 Key 分平台类型，选错了症状非常迷惑**：
+
+| Key 平台类型 | 地图底图 | 逆地理编码（坐标→文字地址） |
+|---|---|---|
+| **Web 端 (JS API)** | ✅ | ✅（但必须配 `securityJsCode`，否则报 10008） |
+| **Web 服务** | ✅ 能显示（瓦片不走平台校验） | ❌ 报 **10009** `USERKEY_PLAT_NOMATCH` |
+
+也就是说，用「Web 服务」类型的 Key 会得到**「地图好好的，就是拿不到地址」**——
+这不是域名白名单问题（很容易误判），是 Key 类型不匹配。
+组件对此有兜底：走 REST 直连 `restapi.amap.com` 拿地址，功能完整可用。
+想要完全走官方链路，就到控制台**新建一个「Web 端 (JS API)」Key**，
+把 Key 和安全密钥一起填进上面的配置即可。
+
+不想改文件也行，控制台里一句就够：
+
+```js
+MapPicker.setKey('你的Key');
+MapPicker.setSecurityCode('你的安全密钥');   // 只有 JS API 类型才需要
+```
+
 ### 跑测试
 
 ```bash
@@ -125,10 +163,17 @@ node test_filter.cjs             # 39 项筛选逻辑单测
 
 ```bash
 python drive_full_flow.py        # 完整业务流程闭环，25 项断言 + 截图到 .shots-flow/
-python drive_admin_e2e.py        # 平台端 8 页，36 项断言 + 截图到 .shots-admin/
-python drive_merchant_e2e.py     # 商家端 7 页，37 项断言 + 截图到 .shots-merchant/
+python drive_admin_e2e.py        # 平台端 9 页，36 项断言 + 截图到 .shots-admin/
+python drive_merchant_e2e.py     # 商家端 8 页，37 项断言 + 截图到 .shots-merchant/
 python drive_client.py           # 客户端页面体检，13 项 + 截图到 .shots/
+python drive_client_v2.py        # 客户端 v1.6 新增交互，31 项 + 截图到 .shots-v2/
+python drive_map_picker.py       # 地图选点专项（三级降级 + 真地图），55 项 + 截图到 .shots-mappicker/
 ```
+
+> `drive_map_picker.py` 覆盖的是**「假实现也能让页面不报错」**这条盲区：
+> 选点组件最初只是 `toast('已选点')`，不产生坐标、不改地址，而所有测试都是绿的。
+> 现在它会真的拖 Marker、点地图、验坐标是否变、地址是否回填，
+> 并依次走「真 Key 真地图 → 无 Key 内置库 → 假 Key 优雅降级」三条路径。
 
 > `drive_full_flow.py` 走的是**一条数据的完整生命周期**：
 > 商家验证码登录 → 发布新菜 → 平台端看到 → 客户端刷到 → 平台端下架 →
@@ -246,15 +291,22 @@ python server/tools/export_mock.py  # 幂等，可重复跑
 | 鉴权 / 上传 / CORS 专项 `test_auth_api.py` | **54 / 54** |
 | 平台端接口回归 `test_admin_api.py` | **47 / 47** |
 | 商家端接口回归 `test_merchant_api.py` | **76 / 76** |
+| 后端接口冒烟 `smoke_test.py` | **25 / 25** |
+| 筛选逻辑 `test_filter.cjs` | **39 / 39** |
+| 适配层行为 `test_adapter.cjs` | **27 / 27** |
+| 内联脚本语法 `check_inline_js.py` | **23 页 / 0 失败** |
 | 完整业务流程 `drive_full_flow.py` | **25 / 25** |
 | 平台端浏览器端到端 `drive_admin_e2e.py` | **36 / 36** |
 | 商家端浏览器端到端 `drive_merchant_e2e.py` | **37 / 37** |
-| 筛选逻辑 `test_filter.cjs` | **39 / 39** |
-| 适配层行为 `test_adapter.cjs` | **27 / 27** |
-| 后端接口冒烟 `smoke_test.py` | **25 / 25** |
 | 客户端浏览器端到端 `drive_client.py` | **13 / 13** |
+| 客户端 v1.6 交互 `drive_client_v2.py` | **31 / 31** |
+| 地图选点专项 `drive_map_picker.py` | **55 / 55** |
 
-合计 **451 项断言全绿**。
+合计 **537 项断言全绿**。
+
+> ⚠️ `test_admin_api.py` / `test_merchant_api.py` / `test_auth_api.py` 会改动数据且**不可逆**，
+> 所以**必须在冷库（刚重启后端）上跑，且各自单独跑**。连着跑会让后面的脚本读到前面的脏状态
+> —— 表现为「冷却中的店发布被拒」「通过后客户端立刻能看到这家店」这类假红，跟代码无关。
 
 **三端数据打通情况**：客户端 ✅ / 平台端 ✅ / **商家端 ✅（读 + 写全部落库）**。
 全链路已闭合：商家发布 → 平台审核管控 → 客户端可见，任一端改动静另外两端立刻能感知。
@@ -288,6 +340,20 @@ JWT 签发之后服务端原本管不了 —— 封了店，商家拿着旧 toke
 | **评论身份** | `POST /api/client/dish/{id}/comment` 的身份取自 token，不再信请求体里的 `userId` |
 | **禁言补漏** | `muted` 的店现在真的不能回评了（之前只有注释写了这条规则） |
 
+### 地图选点与距离权威化（已完成，v1.7）
+
+「地图选点选不了」的根因是两处 `pickMap()` 原本只是 `toast('已选点')` 的**假实现** ——
+不产生坐标、不回填地址，而且**不报错**，所以全部测试都是绿的。
+
+| 项 | 做法 |
+|---|---|
+| **真选点** | 新增 `assets/js/map-picker.js`：高德 JS SDK + 可拖拽 Marker + 逆地理编码回填地址 |
+| **三级降级** | 有 Key 走真地图 → SDK 挂了退内置坐标库 → 无 Key 退 40 个成都真实地标列表（可搜索、双击确认） |
+| **距离唯一来源** | 新增 `DistanceCalculator.java`（Haversine 球面距离 + 5 城中心坐标表），前后端同口径 |
+| **`distance` 是派生字段** | 一律由 `lat/lng` 推导，**手写即错**。种子数据里 22 家里 21 家与公式不符（最大差 6.7km），已全部改为推导 |
+| **地理权威化闸门** | 待审期间 `distance = null` 不参与排序；**审核通过那一刻**才换算。无坐标默认 **400 拒绝**，`force=true` 放行但 distance 保持 null |
+| **改坐标重算** | `updateShop` 检测坐标成对且真变了才 `refreshDistance()` |
+
 ### 已知待办
 
 - [x] ~~后端鉴权~~ ✅ 已完成（真 JWT，不再返回 mock token）
@@ -296,6 +362,10 @@ JWT 签发之后服务端原本管不了 —— 封了店，商家拿着旧 toke
 - [x] ~~商家端逐页接后端~~ ✅ 已完成（读写全落库）
 - [x] ~~验证码形同虚设 / 登录可无限撞库 / JWT 密钥写死~~ ✅ 已完成（v1.4）
 - [x] ~~没有账号禁用 / 踢下线机制~~ ✅ 已完成（v1.5：版本号 + 状态闸门 + 服务端登出）
+- [x] ~~地图选点选不了（假实现）~~ ✅ 已完成（v1.7）
 - [ ] 接真实短信网关并关掉 `echoSmsCode`；限流计数换 Redis（现为内存实现，多实例等于没限）
   —— `docs/05` 已知简化 #1、#3
-- [ ] 客户端仍有 1 处未确认的小问题（用户尚未说明具体现象）
+- [ ] 距离目前是「到**本市中心点**」的直线距离，不是「到用户位置」—— 客户端还没有定位能力。
+  二期把 `CITY_CENTER` 换成用户坐标即可，公式不动
+- [ ] 用户间评论回复**仅本地**，刷新会丢（后端 `comment.reply` 是商家回评字段，待补契约）
+- [ ] 互动状态存 localStorage（`app_user` 未加互动表），**换设备不同步**

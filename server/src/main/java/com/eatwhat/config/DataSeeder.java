@@ -1,5 +1,7 @@
 package com.eatwhat.config;
 
+import com.eatwhat.common.DistanceCalculator;
+import com.eatwhat.controller.MerchantController;
 import com.eatwhat.entity.*;
 import com.eatwhat.repository.*;
 import com.eatwhat.service.ConfigService;
@@ -58,18 +60,27 @@ public class DataSeeder implements CommandLineRunner {
     private final ReportRepository reportRepo;
     private final ConfigService configService;
 
+    /**
+     * 建店铺用。直接注入 Controller 而不是自己 new Shop，
+     * 是为了让「演示数据的待审店铺」和「商家真入驻的店铺」**走同一条代码路径** ——
+     * 否则哪天改了 createPending 的规则，演示数据还按老规则躺着，
+     * 上线验收时才会发现待审列表里全是特例。
+     */
+    private final MerchantController merchantController;
+
     @Value("${eatwhat.seed:true}")
     private boolean enabled;
 
     public DataSeeder(ShopRepository shopRepo, DishRepository dishRepo, CommentRepository commentRepo,
                       AppUserRepository userRepo, ReportRepository reportRepo,
-                      ConfigService configService) {
+                      ConfigService configService, MerchantController merchantController) {
         this.shopRepo = shopRepo;
         this.dishRepo = dishRepo;
         this.commentRepo = commentRepo;
         this.userRepo = userRepo;
         this.reportRepo = reportRepo;
         this.configService = configService;
+        this.merchantController = merchantController;
     }
 
     @Override
@@ -123,10 +134,15 @@ public class DataSeeder implements CommandLineRunner {
      * 在线店铺。
      * weight 刻意做成「有并列」—— 并列时才会走到「距离」和「时间衰减」两级，
      * 否则权重一旦全不相同，后两级规则永远演示不出来。
+     *
+     * <p>⚠️ 这里**没有 distance 字段**。早先手工写死过一份，结果 22 家里有 21 家的值
+     * 和 {@link com.eatwhat.common.DistanceCalculator} 算出来的对不上（最大差 6.7km）——
+     * 演示时看列表排序是一种结果，商家改个位置再刷新又是另一种，很像是排序算法坏了。
+     * 现在统一由坐标推导（见 seedShops），保证「库里的距离」永远等于「公式的距离」。
      */
     private record ShopSeed(String id, String name, String cuisine, String city, String district,
                             String address, String phone, String hours, String intro,
-                            double lat, double lng, double distance,
+                            double lat, double lng,
                             int weight, boolean pinned,
                             int intervalHours, int dailyLimit,
                             int views, int likes, int fav, int cmt, int checkin,
@@ -165,105 +181,113 @@ public class DataSeeder implements CommandLineRunner {
             // s_001 是演示商家账号：登录页填 13800138000（或直接填 s_001）即可进这家店
             new ShopSeed("s_001", "蜀香小馆", "川菜", "成都市", "武侯区", "武侯区科华北路 12 号", "13800138000",
                     "11:00-22:00", "开了十年的苍蝇馆子，麻婆豆腐是招牌。",
-                    30.65, 104.07, 0.8, 60, false, 24, 1, 3200, 412, 188, 36, 24, 5),
+                    30.65, 104.07, 60, false, 24, 1, 3200, 412, 188, 36, 24, 5),
             new ShopSeed("s_002", "老李炭火烧烤", "烧烤", "成都市", "武侯区", "武侯区一环路南三段 88 号", "028-85234567",
                     "17:00-02:00", "炭火现烤，五花肉厚切。",
-                    30.64, 104.08, 1.2, 90, true, 24, 1, 2810, 356, 142, 28, 19, 6),
+                    30.64, 104.08, 90, true, 24, 1, 2810, 356, 142, 28, 19, 6),
             new ShopSeed("s_004", "一味面馆", "面食", "成都市", "武侯区", "武侯区人民南路 33 号", "028-85456789",
                     "07:00-20:00", "红油抄手，皮薄馅大。",
-                    30.63, 104.06, 0.5, 70, false, 24, 1, 1180, 142, 58, 9, 31, 9),
+                    30.63, 104.06, 70, false, 24, 1, 1180, 142, 58, 9, 31, 9),
             new ShopSeed("s_007", "陈记冒菜", "川菜", "成都市", "武侯区", "武侯区双楠路 21 号", "028-85789012",
                     "10:30-21:30", "一锅一煮，麻辣自选。",
-                    30.62, 104.04, 1.6, 80, false, 24, 1, 1640, 208, 96, 17, 12, 4),
+                    30.62, 104.04, 80, false, 24, 1, 1640, 208, 96, 17, 12, 4),
             new ShopSeed("s_012", "玉林路小酒馆", "烧烤", "成都市", "武侯区", "武侯区玉林西路 55 号", "028-85234560",
                     "18:00-03:00", "把把烧配冰啤酒。",
-                    30.61, 104.05, 0.9, 80, false, 24, 1, 2260, 298, 134, 41, 22, 7),
+                    30.61, 104.05, 80, false, 24, 1, 2260, 298, 134, 41, 22, 7),
 
             // ---- 成都 · 锦江区 ----
             new ShopSeed("s_003", "川味坊", "川菜", "成都市", "锦江区", "锦江区春熙路 5 号", "028-85345678",
                     "10:00-21:00", "家常川菜，回锅肉一绝。",
-                    30.66, 104.09, 2.1, 90, true, 24, 1, 1420, 168, 62, 12, 8, 7),
+                    30.66, 104.09, 90, true, 24, 1, 1420, 168, 62, 12, 8, 7),
             new ShopSeed("s_005", "樱町日料", "日料", "成都市", "锦江区", "锦江区红星路三段 1 号", "028-85567890",
                     "11:30-22:00", "每日空运，蓝鳍金枪鱼限量。",
-                    30.67, 104.10, 3.4, 90, true, 24, 1, 1960, 288, 210, 44, 6, 9),
+                    30.67, 104.10, 90, true, 24, 1, 1960, 288, 210, 44, 6, 9),
             new ShopSeed("s_008", "牛市口钵钵鸡", "小吃", "成都市", "锦江区", "锦江区牛市口街 9 号", "028-85890123",
                     "11:00-23:00", "藤椒味最正，签子按根算。",
-                    30.69, 104.11, 2.4, 70, false, 24, 1, 1780, 246, 118, 22, 34, 3),
+                    30.69, 104.11, 70, false, 24, 1, 1780, 246, 118, 22, 34, 3),
             new ShopSeed("s_010", "青石桥海鲜大排档", "粤菜", "成都市", "锦江区", "锦江区青石桥中街 7 号", "028-85012345",
                     "17:00-02:00", "现杀现做，蒜蓉粉丝扇贝。",
-                    30.66, 104.08, 3.8, 60, false, 24, 1, 1520, 196, 88, 16, 11, 12),
+                    30.66, 104.08, 60, false, 24, 1, 1520, 196, 88, 16, 11, 12),
             new ShopSeed("s_013", "春熙路茶餐厅", "粤菜", "成都市", "锦江区", "锦江区中纱帽街 12 号", "028-85345670",
                     "10:00-22:00", "菠萝油和丝袜奶茶是招牌。",
-                    30.65, 104.09, 2.9, 60, false, 24, 1, 1340, 172, 74, 13, 9, 14),
+                    30.65, 104.09, 60, false, 24, 1, 1340, 172, 74, 13, 9, 14),
 
             // ---- 成都 · 青羊区 ----
             new ShopSeed("s_006", "老字号甜水面", "小吃", "成都市", "青羊区", "青羊区宽窄巷子 8 号", "028-85678901",
                     "09:00-19:00", "一根面拇指粗，酱料甜辣。",
-                    30.68, 104.05, 4.2, 70, false, 24, 1, 980, 176, 84, 15, 47, 10),
+                    30.68, 104.05, 70, false, 24, 1, 980, 176, 84, 15, 47, 10),
             new ShopSeed("s_011", "老成都锅盔", "小吃", "成都市", "青羊区", "青羊区文殊院街 15 号", "028-85123450",
                     "07:30-19:00", "军屯锅盔，现烤现卖。",
-                    30.67, 104.06, 4.6, 70, false, 24, 1, 1120, 158, 66, 14, 28, 8),
+                    30.67, 104.06, 70, false, 24, 1, 1120, 158, 66, 14, 28, 8),
 
             // ---- 成都 · 高新区 ----
             new ShopSeed("s_009", "高新串串实验室", "火锅", "成都市", "高新区", "高新区天府三街 199 号", "028-85901234",
                     "16:00-01:00", "锅底自己配，牛油现炒。",
-                    30.55, 104.06, 5.2, 95, true, 24, 1, 3480, 512, 264, 58, 33, 2),
+                    30.55, 104.06, 95, true, 24, 1, 3480, 512, 264, 58, 33, 2),
             new ShopSeed("s_016", "天府三街寿司郎", "日料", "成都市", "高新区", "高新区天府三街 288 号", "028-85678900",
                     "11:00-22:30", "回转寿司，人均亲民。",
-                    30.54, 104.08, 8.4, 60, false, 24, 1, 1060, 138, 58, 11, 7, 16),
+                    30.54, 104.08, 60, false, 24, 1, 1060, 138, 58, 11, 7, 16),
 
             // ---- 成都 · 成华区 ----
             new ShopSeed("s_014", "建设路烤鱼", "火锅", "成都市", "成华区", "成华区建设路 26 号", "028-85456780",
                     "16:30-01:00", "万州烤鱼，麻辣与蒜香双拼。",
-                    30.67, 104.13, 6.1, 60, false, 24, 1, 1880, 264, 124, 26, 18, 5),
+                    30.67, 104.13, 60, false, 24, 1, 1880, 264, 124, 26, 18, 5),
             new ShopSeed("s_017", "玉双路糖水铺", "甜品", "成都市", "成华区", "成华区玉双路 3 号", "028-85789010",
                     "12:00-23:00", "广式糖水，姜撞奶现撞。",
-                    30.66, 104.12, 5.5, 50, false, 24, 1, 860, 214, 132, 19, 41, 11),
+                    30.66, 104.12, 50, false, 24, 1, 860, 214, 132, 19, 41, 11),
             new ShopSeed("s_019", "东郊记忆西餐厅", "西餐", "成都市", "成华区", "成华区建设南支路 4 号", "028-85901230",
                     "11:00-22:00", "牛排现切，环境安静。",
-                    30.65, 104.14, 9.8, 50, false, 24, 1, 740, 96, 44, 8, 4, 13),
+                    30.65, 104.14, 50, false, 24, 1, 740, 96, 44, 8, 4, 13),
 
             // ---- 成都 · 金牛区 ----
             new ShopSeed("s_015", "抚琴豆花面", "面食", "成都市", "金牛区", "金牛区抚琴西路 44 号", "028-85567890",
                     "06:30-14:00", "豆花嫩，红油香。",
-                    30.70, 104.05, 7.3, 60, false, 24, 1, 920, 128, 52, 10, 16, 15),
+                    30.70, 104.05, 60, false, 24, 1, 920, 128, 52, 10, 16, 15),
             new ShopSeed("s_018", "湘遇小炒", "湘菜", "成都市", "金牛区", "金牛区解放路二段 18 号", "028-85890120",
                     "11:00-21:30", "剁椒鱼头够辣。",
-                    30.68, 104.03, 6.8, 60, false, 24, 1, 1240, 164, 72, 21, 9, 12),
+                    30.68, 104.03, 60, false, 24, 1, 1240, 164, 72, 21, 9, 12),
 
             // ---- 成都 · 成华区 / 金牛区 / 武侯区（继续补量）----
             new ShopSeed("s_020", "老绵阳米粉", "小吃", "成都市", "成华区", "成华区双桥路 18 号", "028-86123456",
                     "06:00-14:00", "米粉细滑，红汤清汤都行。",
-                    30.66, 104.11, 1.4, 80, false, 24, 1, 1660, 232, 104, 27, 38, 6),
+                    30.66, 104.11, 80, false, 24, 1, 1660, 232, 104, 27, 38, 6),
             new ShopSeed("s_021", "老码头火锅", "火锅", "成都市", "金牛区", "金牛区西安中路 9 号", "028-86234567",
                     "17:00-02:00", "老码头牛油锅，本地人常去。",
-                    30.67, 104.04, 2.7, 70, false, 24, 1, 1480, 206, 92, 24, 15, 8),
+                    30.67, 104.04, 70, false, 24, 1, 1480, 206, 92, 24, 15, 8),
             new ShopSeed("s_022", "炭匠烤肉", "烧烤", "成都市", "武侯区", "武侯区外双楠 88 号", "028-86345678",
                     "17:30-01:00", "大块牛排串，分量足。",
-                    30.60, 104.03, 3.3, 60, false, 24, 1, 1020, 144, 64, 12, 6, 10)
+                    30.60, 104.03, 60, false, 24, 1, 1020, 144, 64, 12, 6, 10)
     );
 
-    /** 待审核队列（客户端完全看不到）。 */
+    /**
+     * 待审核队列（客户端完全看不到）。
+     *
+     * <p>坐标必填 —— 它们代表「商家在申请页地图上选的点」。
+     * 之前只有 p_001~p_003 有坐标，p_004/p_005 是 null，
+     * 结果平台端点「通过」时那两家会算不出距离（distance=null，排到列表末尾），
+     * 演示时看着像排序坏了。现在五家都有真实坐标。
+     */
     private record PendingSeed(String id, String name, String cuisine, String city, String district,
                                String address, String phone, String hours, String intro,
+                               double lat, double lng,
                                int submittedDaysAgo, int submittedHour) {}
 
     private static final List<PendingSeed> PENDING = List.of(
             new PendingSeed("p_001", "新开的螺蛳粉", "小吃", "成都市", "成华区",
                     "成华区建设路 66 号", "028-88887777", "10:00-23:00",
-                    "正宗柳州味道，酸笋每天现发。", 1, 9),
+                    "正宗柳州味道，酸笋每天现发。", 30.6690, 104.1150, 1, 9),
             new PendingSeed("p_002", "巷子口串串香", "火锅", "成都市", "金牛区",
                     "金牛区抚琴西路 8 号", "028-88888888", "16:00-03:00",
-                    "老巷子里的苍蝇馆子，开了七年。", 1, 10),
+                    "老巷子里的苍蝇馆子，开了七年。", 30.6800, 104.0450, 1, 10),
             new PendingSeed("p_003", "深夜豆浆油条", "小吃", "成都市", "锦江区",
                     "锦江区东大街 41 号", "028-88889999", "22:00-06:00",
-                    "专做夜宵档，豆浆现磨。", 0, 8),
+                    "专做夜宵档，豆浆现磨。", 30.6520, 104.0900, 0, 8),
             new PendingSeed("p_004", "城南潮汕牛肉锅", "火锅", "成都市", "高新区",
                     "高新区府城大道 128 号", "028-88886666", "11:00-23:00",
-                    "现宰黄牛，八秒吊龙。", 0, 9),
+                    "现宰黄牛，八秒吊龙。", 30.5830, 104.0630, 0, 9),
             new PendingSeed("p_005", "锦江老面馆", "面食", "成都市", "锦江区",
                     "锦江区梨花街 22 号", "0816-2288999", "06:30-20:00",
-                    "开了二十年的老面馆，杂酱面最出名。", 2, 11)
+                    "开了二十年的老面馆，杂酱面最出名。", 30.6470, 104.0830, 2, 11)
     );
 
     /** 已驳回（用于演示驳回理由回显）。 */
@@ -279,6 +303,10 @@ public class DataSeeder implements CommandLineRunner {
     );
 
     private void seedShops() {
+        // 待审核队列先建 —— 它们走的是真实入驻接口，独立成方法是为了让
+        // 「这块数据怎么来的」在文件结构上一眼可见（不是手搓字段，是调接口）。
+        seedPendingShops();
+
         for (ShopSeed x : SHOPS) {
             Shop s = new Shop();
             s.setId(x.id());
@@ -292,7 +320,10 @@ public class DataSeeder implements CommandLineRunner {
             s.setIntro(x.intro());
             s.setLat(x.lat());
             s.setLng(x.lng());
-            s.setDistance(x.distance());
+            // 距离由坐标推导，不手写 —— 手写过一份，22 家里 21 家和公式对不上（最大差 6.7km）。
+            // 现在「演示数据的距离」和「商家改位置后重算的距离」走同一个公式，
+            // 排序在前端看起来才是一致的。
+            s.setDistance(DistanceCalculator.toCityCenter(x.city(), x.lat(), x.lng()));
             s.setStatus("normal");
             s.setWeight(x.weight());
             s.setPinned(x.pinned());
@@ -312,16 +343,6 @@ public class DataSeeder implements CommandLineRunner {
             shopRepo.save(s);
         }
 
-        for (PendingSeed x : PENDING) {
-            Shop s = baseShop(x.id(), x.name(), x.cuisine(), x.city(), x.district(),
-                    x.address(), x.phone(), x.hours(), x.intro());
-            s.setStatus("pending");
-            s.setSubmittedAt(fmt(ts(x.submittedDaysAgo(), x.submittedHour(), 15)));
-            s.setReviewedAt(null);
-            s.setRejectReason(null);
-            shopRepo.save(s);
-        }
-
         for (RejectedSeed x : REJECTED) {
             Shop s = baseShop(x.id(), x.name(), x.cuisine(), x.city(), x.district(),
                     x.address(), "028-00000000", "不定", x.intro());
@@ -335,9 +356,55 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     /**
-     * 待审核 / 已驳回店铺的公共部分。
-     * 距离必须是 null 而不是 0 —— 0 在排序里等于「就在你脚下」，
+     * 待审核队列。走真实入驻接口（Controller 直调，绕开 HTTP），
+     * 这样待审店铺的字段口径、状态、发布规则与线上完全一致。
+     *
+     * <p>接口会用 {@code s_<时间戳>} 落一条新记录，演示需要的是 {@code p_00X}
+     * 这种稳定 id（前端多处按 p_ 前缀判断待审），所以要换 id。
+     *
+     * <p>⚠️ 换 id 必须**先删旧行再存新行**，不能直接 {@code setId()} 后 save ——
+     * JPA 认为 id 变了就是「另一个实体」，会 INSERT 出一条新记录，
+     * 结果待审列表里每条都出现两次（一份 s_xxx、一份 p_00X）。
+     * 这个坑很隐蔽：页面不报错，只是列表看着莫名长了一倍。
+     */
+    private void seedPendingShops() {
+        for (PendingSeed x : PENDING) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("name", x.name());
+            body.put("cuisine", x.cuisine());
+            body.put("city", x.city());
+            body.put("district", x.district());
+            body.put("address", x.address());
+            body.put("phone", x.phone());
+            body.put("hours", x.hours());
+            body.put("intro", x.intro());
+            body.put("lat", x.lat());
+            body.put("lng", x.lng());
+            Shop s = merchantController.applyPending(body);
+
+            String autoId = s.getId();
+            s.setId(x.id());
+            s.setSubmittedAt(fmt(ts(x.submittedDaysAgo(), x.submittedHour(), 15)));
+            s.setReviewedAt(null);
+            s.setReviewer(null);
+            s.setRejectReason(null);
+            s.setLogo(picsum(x.id() + "logo", 200, 200));
+            s.setCover(picsum(x.id() + "cover", 800, 600));
+            shopRepo.save(s);
+
+            // 删掉接口自动生成的那一行（新行已存好，现在删不会丢数据）
+            if (!autoId.equals(x.id())) shopRepo.deleteById(autoId);
+        }
+    }
+
+    /**
+     * 已驳回店铺的公共部分。
+     * distance 必须是 null 而不是 0 —— 0 在排序里等于「就在你脚下」，
      * 会把还没上线的店顶到推荐榜首。权重同理给 0。
+     *
+     * <p>这里**存坐标但不算 distance**：被驳回的申请同样保留商家选的点，
+     * 万一商家改好资料重新提交，位置不用重选；而 distance 是「上线后离用户多远」，
+     * 没上线就谈不上，留给审核通过那一刻再算。
      */
     private Shop baseShop(String id, String name, String cuisine, String city, String district,
                           String address, String phone, String hours, String intro) {
@@ -351,8 +418,10 @@ public class DataSeeder implements CommandLineRunner {
         s.setPhone(phone);
         s.setHours(hours);
         s.setIntro(intro);
-        s.setLat(31.0);
-        s.setLng(104.3);
+        // 成都天府广场附近 —— 之前写死 (31.0, 104.3) 在城北郊区，
+        // 驳回店铺将来若被恢复上线，距离会凭空多出十几公里。
+        s.setLat(30.6570);
+        s.setLng(104.0658);
         s.setDistance(null);
         s.setWeight(0);
         s.setPinned(false);

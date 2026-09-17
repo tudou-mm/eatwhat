@@ -50,6 +50,9 @@
     font-size: 12px; box-shadow: var(--shadow-sm); cursor: pointer;
   }
   .map-btn:hover { background: #F7F8FA; }
+  /* 选完点后的实心态：和「还没选」的灰底网格一眼分得开 */
+  .map-box.is-picked { background: #F3FBF6; }
+  .map-box.is-picked .map-hint { background: rgba(255,255,255,.98); color: var(--text-1); }
 
   .upload-photo {
     display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;
@@ -170,10 +173,11 @@
           <input class="input" id="fAddr" placeholder="点击右侧地图选点，自动填充" readonly>
           <button class="btn btn--outline" style="flex-shrink:0" onclick="pickMap()">地图选点</button>
         </div>
-        <div class="map-box">
-          <div class="map-pin">📍</div>
-          <div class="map-btn" onclick="pickMap()">重新选点</div>
-          <div class="map-hint">示例位置：成都市武侯区</div>
+        <!-- 选点结果卡：未选点时是灰底空态，选完变成实心卡片（见 renderPin） -->
+        <div class="map-box" id="mapBox">
+          <div class="map-pin" id="mapPin">📍</div>
+          <div class="map-btn" onclick="pickMap()">选择位置</div>
+          <div class="map-hint" id="mapHint">还没选位置，点「地图选点」在地图上定位你的店</div>
         </div>
         <div class="field__hint">经纬度将用于计算用户距离，影响附近推荐排序</div>
       </div>
@@ -209,9 +213,14 @@
 
 <script src="../assets/data/mock.js"></script>
 <script src="../assets/js/api.js"></script>
+<script src="../assets/data/amap-key.js"></script>
+<script src="../assets/js/map-picker.js"></script>
 <script>
 let coverImg = null;
 let photos = [];
+
+// 地图选点结果。null = 还没选 —— 提交时会被拦下来（fAddr 是 readonly，填不进来别的值）
+let picked = null;
 
 (function init() {
   document.getElementById('fCuisine').innerHTML =
@@ -282,9 +291,42 @@ function delPhoto(i) {
   renderPhotos();
 }
 
+/**
+ * 地图选点。
+ *
+ * 弹层里选完 → 回填地址 + 记下经纬度。地址栏是 readonly 的，
+ * 唯一写入路径就是这里 —— 保证「有地址」和「有坐标」永远同时成立，
+ * 不会出现「地址填了但 lat/lng 是 null」这种后端算不出距离的半残状态。
+ */
 function pickMap() {
-  document.getElementById('fAddr').value = '成都市武侯区锦绣路 88 号';
-  toast('已选点：锦绣路 88 号（原型模拟）');
+  MapPicker.open({
+    current: picked,
+    onPick(p) {
+      picked = p;
+      // 只在真解析到地址时才覆盖输入框。
+      // 逆地理编码失败时 address 是空的 —— 直接写会把商家手填的地址清掉，
+      // 或者塞进一句没意义的「坐标 30.65, 104.07」当地址提交。
+      if (p.address) {
+        document.getElementById('fAddr').value = p.address;
+        toast('已选点：' + p.address);
+      } else {
+        toast('已取到坐标，请手动填写详细地址');
+      }
+      renderPin(p);
+    }
+  });
+}
+
+/** 选点结果卡：有坐标就显示坐标，地址可能是空的（逆地理编码失败） */
+function renderPin(p) {
+  document.getElementById('mapPin').textContent = '📍';
+  document.getElementById('mapHint').innerHTML =
+    (p.address
+      ? p.address
+      : '<span style="color:#C9302C">已定位，但没解析出地址 —— 请在上面的「详细地址」里手动填写</span>') +
+    '<div style="margin-top:3px;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#B0B5BD">' +
+    Number(p.lat).toFixed(6) + ', ' + Number(p.lng).toFixed(6) + '</div>';
+  document.getElementById('mapBox').classList.add('is-picked');
 }
 
 function submitApply() {
@@ -298,13 +340,16 @@ function submitApply() {
   if (!name) { toast('请填写店铺名称'); return; }
   if (!cuisine) { toast('请选择菜系分类'); return; }
   if (!coverImg) { toast('请上传门头图'); return; }
-  if (!addr) { toast('请在地图上选点'); return; }
+  if (!addr || !picked) { toast('请在地图上选点'); return; }
   if (!phone) { toast('请填写联系电话'); return; }
   if (!open || !close) { toast('请填写营业时间'); return; }
 
   // 真正提交：在线落成一家 pending 店铺，离线只塞进本地数组。
   // 待审核店铺不会被客户端看到（服务端 listVisible 会排除），
   // 且 distance 由服务端置空 —— 这些都不需要页面操心。
+  //
+  // lat/lng 会一起提交入库。注意：**待审期间它们不参与排序**，
+  // 要等平台审核通过那一刻由后端换算成 distance 才生效（见 ShopService.approve）。
   const r = MOCK.act('merchant.apply', {
     name: name,
     cuisine: cuisine,
@@ -315,7 +360,9 @@ function submitApply() {
     hours: open + ' - ' + close,
     intro: document.getElementById('fIntro').value.trim(),
     cover: coverImg,
-    logo: coverImg
+    logo: coverImg,
+    lat: picked.lat,
+    lng: picked.lng
   });
 
   if (!r.ok) { toast('提交失败：' + (r.msg || '未知错误')); return; }
