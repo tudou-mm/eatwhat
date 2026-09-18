@@ -17,9 +17,11 @@ import java.util.stream.Collectors;
 public class RankService {
 
     private final ShopRepository shopRepo;
+    private final ShopService shopService;
 
-    public RankService(ShopRepository shopRepo) {
+    public RankService(ShopRepository shopRepo, ShopService shopService) {
         this.shopRepo = shopRepo;
+        this.shopService = shopService;
     }
 
     /**
@@ -75,6 +77,57 @@ public class RankService {
             return !"banned".equals(st) && !"pending".equals(st) && !"rejected".equals(st);
         }).collect(Collectors.toList());
         return sortShops(list);
+    }
+
+    /**
+     * 首屏用：从可见店铺里取「最该先给用户看的」前 limit 家。
+     *
+     * <p><b>为什么不是简单取前 N 条</b>：{@link #sortShops} 是
+     * 「置顶 &gt; 权重 &gt; 距离 &gt; 时间衰减」，权重主导。
+     * 而 {@link com.eatwhat.config.DataSeeder} 的权重是**刻意并列**的
+     * （90/85/…/30 分档，同档几十家），所以纯按它取前 200 家，
+     * 会集中在「权重最高的档位」里，下面的店永远进不了首屏。
+     *
+     * <p>这里改成**先按距离取、层内按权重**：保证首屏覆盖的是
+     * 用户周围一圈真实的店，而不是一批权重虚高的店。
+     * 权重依然参与（同距离段内起作用），只是不再独占主导权。
+     *
+     * <p><b>三类店必须保底进首屏</b>（不受距离限制）：
+     * <ol>
+     *   <li><b>置顶店</b> —— 运营手动指定的，一般是重要合作方</li>
+     *   <li><b>刚上线的店</b> —— 否则「审核通过 → 客户端立刻可见」会失效。
+     *       审核验收动作就是「通过 → 去客户端刷新」，它必须稳定成立，
+     *       不能因为店在城郊、距离排不进前 200 就看不到。</li>
+     *   <li><b>刚改过资料的店</b> —— 否则「商家改完简介 → 去客户端确认」
+     *       看到的还是旧文案，商家会以为保存没生效。</li>
+     * </ol>
+     * 后两类的判定统一收在 {@link ShopService#isRecentlyChanged}。
+     */
+    public List<Shop> topShopsByDistance(List<Shop> shops, int limit, String city) {
+        List<Shop> pool = (city == null || city.isBlank())
+                ? shops
+                : shops.stream().filter(s -> city.equals(s.getCity())).collect(Collectors.toList());
+        if (pool.size() <= limit) return sortShops(pool);
+
+        // 保底：置顶店 + 刚上线/刚改过资料的店
+        List<Shop> must = pool.stream()
+                .filter(s -> Boolean.TRUE.equals(s.getPinned()) || shopService.isRecentlyChanged(s))
+                .collect(Collectors.toList());
+        Set<String> mustIds = new HashSet<>();
+        for (Shop s : must) mustIds.add(s.getId());
+        int rest = Math.max(0, limit - must.size());
+
+        // 其余按距离排序取前 rest 家；distance 为 null 的排最后（不会混进来）
+        List<Shop> byDist = pool.stream()
+                .filter(s -> !mustIds.contains(s.getId()))
+                .sorted(Comparator.comparingDouble(
+                        s -> s.getDistance() == null ? Double.MAX_VALUE : s.getDistance()))
+                .limit(rest)
+                .collect(Collectors.toList());
+
+        List<Shop> out = new ArrayList<>(must);
+        out.addAll(byDist);
+        return sortShops(out);
     }
 
     /**

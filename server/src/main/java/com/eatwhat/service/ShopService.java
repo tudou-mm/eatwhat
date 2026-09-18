@@ -135,6 +135,29 @@ public class ShopService {
                 .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
     }
 
+    /**
+     * 解析 'yyyy-MM-dd HH:mm' 时间串，返回距今的小时数；解析不了返回 {@code null}。
+     *
+     * <p>为什么要这个方法（而不是让调用方各自 {@code LocalDateTime.parse}）：
+     * 库里这些时间是 **String**（历史原因，与前端展示格式一致），
+     * 少写一个 {@code try/catch} 就是一处「脏数据 → 首屏接口 500」的隐患。
+     * 统一收在这里，语义是「**解析不了就当没有这个时间**」，
+     * 调用方（保底逻辑）自然退化成「不保底」而不是报错。
+     */
+    private Long hoursSince(String t) {
+        if (t == null || t.isBlank()) return null;
+        try {
+            java.time.LocalDateTime at = java.time.LocalDateTime.parse(
+                    t.trim().replace(' ', 'T'),
+                    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"));
+            return java.time.Duration.between(
+                    at, java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai")))
+                    .toHours();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private String str(String s) { return s == null ? "" : s; }
 
     // ==================== 违规三级处理 ====================
@@ -164,7 +187,94 @@ public class ShopService {
     public Shop restore(String id) {
         Shop s = get(id);
         s.setStatus("normal");
+        // ⚠️ 恢复也要刷新 reviewedAt。
+        // 客户端首屏是**限量**的（见 ClientController.BOOTSTRAP_SHOP_LIMIT），
+        // 「刚上线的店必须立刻可见」靠 reviewedAt 是否在 48 小时内判定
+        // （见 isRecentlyChanged）。
+        // restore 不刷新的话，一家被封了三周又解封的店，客户端要等
+        // 它靠距离排进前 200 才看得到 —— 运营验完「解封 → 客户端刷新」
+        // 会发现店还是没出来，以为解封没生效。
+        s.setReviewedAt(now());
         return repo.save(s);
+    }
+
+    /**
+     * 商家保存店铺资料。
+     *
+     * <p>统一入口（不要在各 Controller 里自己 {@code repo.save}）——
+     * 因为「保存」必须连带做一件事：**刷新 {@code updatedAt}**。
+     * 客户端首屏限量后，「改完资料去客户端刷新就能看到」靠这个字段保底
+     * （见 {@code RankService.topShopsByDistance}）。
+     * 漏刷的后果是**静默的**：接口返回成功、商家端看到新简介，
+     * 但客户端刷十遍还是旧文案，商家会以为「保存没生效」。
+     */
+    public Shop updateFromMerchant(Shop s, Map<String, Object> body) {
+        if (body.get("name") != null) s.setName(body.get("name").toString());
+        if (body.get("cuisine") != null) s.setCuisine(body.get("cuisine").toString());
+        if (body.get("intro") != null) s.setIntro(body.get("intro").toString());
+        if (body.get("address") != null) s.setAddress(body.get("address").toString());
+        if (body.get("phone") != null) s.setPhone(body.get("phone").toString());
+        if (body.get("hours") != null) s.setHours(body.get("hours").toString());
+        if (body.get("cover") != null) s.setCover(body.get("cover").toString());
+        if (body.get("logo") != null) s.setLogo(body.get("logo").toString());
+
+        // 坐标：改了经纬度就必须重算 distance —— 否则地图上挪了两公里，
+        // 客户端「附近」里还是按旧位置排，两边对不上。
+        // 只认「两个都传了」的情况，传半边会让店铺落到 (新lat, 旧lng) 这种不存在的位置。
+        Double lat = toDouble(body.get("lat"));
+        Double lng = toDouble(body.get("lng"));
+        boolean moved = lat != null && lng != null
+                && (!lat.equals(s.getLat()) || !lng.equals(s.getLng()));
+        if (lat != null) s.setLat(lat);
+        if (lng != null) s.setLng(lng);
+
+        s.setUpdatedAt(now());
+        Shop saved = repo.save(s);
+        if (moved) {
+            // refreshDistance 内部还会 save 一次，更新后的 distance 才是最终态
+            return refreshDistance(saved);
+        }
+        return saved;
+    }
+
+    /**
+     * 这家店是否「刚刚有过变更」，值得在首屏里保底露出。
+     *
+     * <p>覆盖三类变更，各自对应一个真实场景：
+     * <ul>
+     *   <li><b>审核/解封</b>（{@code reviewedAt} 48 小时内）——
+     *       运营「通过 → 去客户端刷新看看」的验收动作</li>
+     *   <li><b>商家改资料</b>（{@code updatedAt} 24 小时内）——
+     *       商家「改完简介去客户端确认」的自检动作</li>
+     *   <li><b>刚发过菜</b>（{@code lastPublishAt} 24 小时内）——
+     *       商家「发完菜去客户端看看上没上」的自检动作</li>
+     * </ul>
+     *
+     * <p><b>⚠️ 为什么「刚发过菜」必须在这里保底（血泪）</b>：
+     * {@code /client/bootstrap} 的菜品范围是**店铺集合的子集**（见该方法的说明）——
+     * 这是为了不让「有菜没店」的孤儿数据打乱前端排序。
+     * 所以「商家刚发的菜客户端可见」就不可能只靠菜品范围实现，
+     * 必须**把店拉进店铺集合**，菜才跟着进来。
+     * 漏掉这一条的后果是商家发完菜在客户端刷不到，以为没发成功。
+     *
+     * <p>为什么商家侧是 24 小时而审核侧是 48：审核侧要覆盖
+     * 「审完当天到第二天再看一眼」，商家侧只需要覆盖「刚改完马上验证」，
+     * 而商家的修改频率远高于审核（1620 家店每天都可能有人改简介、发菜），
+     * 窗口开太大会让首屏的保底名额被吃掉，挤掉真正该露出的附近店。
+     */
+    public boolean isRecentlyChanged(Shop s) {
+        Long r = hoursSince(s.getReviewedAt());
+        if (r != null && r < 48) return true;
+        Long u = hoursSince(s.getUpdatedAt());
+        if (u != null && u < 24) return true;
+        Long p = s.getLastPublishAt();
+        if (p != null) {
+            long hours = (System.currentTimeMillis() - p) / 3600_000L;
+            // 时间戳在未来（时钟漂移 / 手工造的脏数据）也算「刚发过」，
+            // 宁可多保底一家，也不要让商家的新菜刷不出来。
+            if (hours < 24) return true;
+        }
+        return false;
     }
 
     // ==================== 单店发布规则覆盖 ====================

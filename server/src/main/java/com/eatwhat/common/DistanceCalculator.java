@@ -16,6 +16,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * 二期接入真实定位后，把 {@code CITY_CENTER} 换成「用户当前坐标」即可，
  * 公式不用动。这也是为什么排序里「距离」放在「权重」之后：
  * 锚点是死的，真按它排序会把市中心商圈永久顶到前面。
+ *
+ * <p>⚠️ 坐标口径：高德与种子数据统一用 **GCJ-02（火星坐标）**，
+ * 锚点取自 {@code yizheng-food-radar} 采集库的仪征市中心
+ * （2582 家 POI 的坐标包围盒中心），与店铺坐标同一坐标系，不需要纠偏。
  */
 public final class DistanceCalculator {
 
@@ -30,17 +34,28 @@ public final class DistanceCalculator {
      * 用市中心的**真实坐标**而不是「所有店坐标求平均」：
      * 求平均的话，加一家新店就会让全城所有店的距离集体微调，
      * 排序结果每天都在悄悄变，出了问题根本查不出来。
+     *
+     * ⚠️ 城市名必须写**全称**，且与 {@code shop.city} 完全一致（含「市」字）。
+     * 漏写会静默落到 {@link #DEFAULT_CENTER}，表现为「全城距离集体偏了十几公里」
+     * 而排序看起来仍然正常 —— 极难发现。
      */
     private static final Map<String, double[]> CITY_CENTER = new ConcurrentHashMap<>(Map.of(
-            "成都市", new double[]{30.6570, 104.0658},
-            "北京市", new double[]{39.9042, 116.4074},
-            "上海市", new double[]{31.2304, 121.4737},
-            "深圳市", new double[]{22.5431, 114.0579},
-            "广州市", new double[]{23.1291, 113.2644}
+            // 主城：仪征市中心（取自 yizheng-food-radar 2582 家 POI 的包围盒中心）
+            "仪征市", new double[]{32.2728, 119.1845},
+            // 其余为二期候选城市，先占位，与仪征同属扬州/苏中片区
+            "扬州市", new double[]{32.3942, 119.4129},
+            "南京市", new double[]{32.0603, 118.7969},
+            "镇江市", new double[]{32.1878, 119.4250},
+            "泰州市", new double[]{32.4558, 119.9230}
     ));
 
-    /** 兜底锚点：城市表里没有的，一律按成都算（当前只在成都试点） */
-    private static final double[] DEFAULT_CENTER = {30.6570, 104.0658};
+    /**
+     * 兜底锚点：城市表里没有的一律按**仪征**算。
+     *
+     * ⚠️ 这里必须与业务主战场一致。种子数据是仪征的店，
+     * 若兜底成别的城市，任何城市名拼写差异都会让演示数据整体偏航。
+     */
+    private static final double[] DEFAULT_CENTER = {32.2728, 119.1845};
 
     private static double[] centerOf(String city) {
         if (city == null || city.isBlank()) return DEFAULT_CENTER;
@@ -59,7 +74,7 @@ public final class DistanceCalculator {
         return Math.round(km * 10) / 10.0;
     }
 
-    /** 无城市信息时的重载，等价于按成都锚点算 */
+    /** 无城市信息时的重载，等价于按仪征锚点算 */
     public static Double toCityCenter(double lat, double lng) {
         return toCityCenter(null, lat, lng);
     }
@@ -68,7 +83,7 @@ public final class DistanceCalculator {
      * Haversine 球面距离。
      *
      * 不用平面近似（{@code √(Δlat²+Δlng²)}）的原因：那个公式漏了经度随纬度收敛，
-     * 在成都（北纬 30°）会把东西向距离高估约 15%，越往北错得越离谱。
+     * 在仪征（北纬 32.3°）会把东西向距离高估约 18%，越往北错得越离谱。
      * 这里就是几行三角函数，没有性能理由省。
      */
     public static double haversine(double lat1, double lng1, double lat2, double lng2) {

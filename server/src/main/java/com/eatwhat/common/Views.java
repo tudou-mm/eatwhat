@@ -68,6 +68,9 @@ public class Views {
         m.put("phone", s.getPhone());
         m.put("hours", s.getHours());
         m.put("cuisine", s.getCuisine());
+        // 品类置信度：low 表示这个 cuisine 是从「中餐厅/餐饮相关」这类粗桶兜底来的，
+        // 前端据此折叠/降权处理。老数据没有这个字段 → 默认 high。
+        m.put("cuisineConfidence", s.getCuisineConfidence() == null ? "high" : s.getCuisineConfidence());
         m.put("intro", s.getIntro());
         m.put("status", s.getStatus());
         m.put("weight", nz(s.getWeight()));
@@ -81,6 +84,7 @@ public class Views {
         // 审核痕迹 —— 平台端「商家审核」页要用
         m.put("submittedAt", s.getSubmittedAt());
         m.put("reviewedAt", s.getReviewedAt());
+        m.put("updatedAt", s.getUpdatedAt());
         m.put("reviewer", s.getReviewer());
         m.put("rejectReason", s.getRejectReason());
 

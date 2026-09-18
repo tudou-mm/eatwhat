@@ -47,6 +47,20 @@ public class Shop {
     /** 平台审核时间 */
     private String reviewedAt;
 
+    /**
+     * 店铺资料最后修改时间，'yyyy-MM-dd HH:mm'（商家保存资料时刷新）。
+     *
+     * <p><b>为什么必须单独有一个字段</b>：客户端首屏是**限量**的
+     * （见 {@code ClientController.BOOTSTRAP_SHOP_LIMIT}），只按距离取前 200 家。
+     * 这会让「商家改完资料，去客户端刷新就能看到」这个产品保证失效 ——
+     * 一家排在 200 名之外的店改完简介，客户端看到的还是旧的。
+     *
+     * <p>不能复用 {@code reviewedAt}：那是**审核**动作的时间。
+     * 商家每天改资料都会刷新它，会让「刚上线的新店」和「老店改了个字」
+     * 混成同一类，审核队列的语义就脏了。
+     */
+    private String updatedAt;
+
     /** 审核人 */
     private String reviewer;
 
@@ -68,6 +82,30 @@ public class Shop {
 
     /** 每日发布上限，默认 1 */
     private Integer dailyLimit = 1;
+
+    /**
+     * 高德原始品类（采集来的，如「小吃快餐」「餐饮相关」）。
+     *
+     * 保留它是因为**我们的 cuisine 是映射后的结果，映射必然有损失** ——
+     * 店主认领后要改品类时，得有个「原来标的是什么」作参照；
+     * 运营排查「为什么这家被归成中餐」时也要看得到源头。
+     */
+    private String amapCuisine;
+
+    /**
+     * 品类置信度：high | low。
+     *
+     * 高德的品类标注有粗有细 —— 「川菜」「火锅」这种是明确的（high），
+     * 但「中餐厅」「餐饮相关」这种粗桶只能兜底成「中餐」（low）。
+     * 实测 low 占了 47.5%，**这不是数据质量问题，是数据源的真实边界**。
+     *
+     * 产品上用它的地方：
+     * <ul>
+     *   <li>筛选器把 low 的「中餐」折叠或放最后，别污染主体验</li>
+     *   <li>店主认领后提示「请确认你的菜系」—— 让一手信息来修正</li>
+     * </ul>
+     */
+    private String cuisineConfidence = "high";
 
     /** 最后发布时间戳（毫秒），用于冷却判断 */
     private Long lastPublishAt;
@@ -121,6 +159,8 @@ public class Shop {
     public void setSubmittedAt(String submittedAt) { this.submittedAt = submittedAt; }
     public String getReviewedAt() { return reviewedAt; }
     public void setReviewedAt(String reviewedAt) { this.reviewedAt = reviewedAt; }
+    public String getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(String updatedAt) { this.updatedAt = updatedAt; }
     public String getReviewer() { return reviewer; }
     public void setReviewer(String reviewer) { this.reviewer = reviewer; }
     public String getRejectReason() { return rejectReason; }
@@ -135,6 +175,10 @@ public class Shop {
     public void setIntervalHours(Integer intervalHours) { this.intervalHours = intervalHours; }
     public Integer getDailyLimit() { return dailyLimit; }
     public void setDailyLimit(Integer dailyLimit) { this.dailyLimit = dailyLimit; }
+    public String getAmapCuisine() { return amapCuisine; }
+    public void setAmapCuisine(String amapCuisine) { this.amapCuisine = amapCuisine; }
+    public String getCuisineConfidence() { return cuisineConfidence; }
+    public void setCuisineConfidence(String cuisineConfidence) { this.cuisineConfidence = cuisineConfidence; }
     public Long getLastPublishAt() { return lastPublishAt; }
     public void setLastPublishAt(Long lastPublishAt) { this.lastPublishAt = lastPublishAt; }
     public Integer getTokenVersion() { return tokenVersion == null ? 0 : tokenVersion; }

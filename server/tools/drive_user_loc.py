@@ -56,10 +56,16 @@ CHROME_CANDS = [
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
 ]
 
-# 成都春熙路 —— 用来模拟「用户就在市中心附近」
-USER_LAT, USER_LNG = 30.6598, 104.0810
-# 大熊猫基地 —— 用来模拟「用户在城北」，好验证排序真的按用户位置重排了
-FAR_LAT, FAR_LNG = 30.7380, 104.1460
+# 仪征国庆路商业步行街 —— 用来模拟「用户就在市中心附近」
+# ⚠️ **不能填市中心本身的坐标**（32.2728, 119.1845）！
+#    那是 `CITY_CENTER` 降级基准，填成一样的话「用户口径 vs 市中心口径」
+#    两者恒等，第 2 组那条「没有偷偷退回 shop.distance」的断言会假红。
+#    坐标取自 radar.db（国庆路商业步行街，距市中心约 0.37km）。
+USER_LAT, USER_LNG = 32.272683, 119.180490
+# 仪征北部（月塘镇方向）—— 用来模拟「用户在城北」，好验证排序真的按用户位置重排了
+FAR_LAT, FAR_LNG = 32.3720, 119.1580
+# 手动设点用（对应原来的「大熊猫基地」），语义＝「离市区较远的另一个地标」
+MANUAL_LAT, MANUAL_LNG, MANUAL_NAME = 32.3720, 119.1580, '月塘镇中心'
 
 PASS, FAIL, SKIP = [], [], []
 
@@ -261,7 +267,7 @@ def main():
             check("距离标签 =「距我的位置」", c.eval("UserLoc.label()") == "距我的位置",
                   c.eval("UserLoc.label()"))
 
-            # 用户就在春熙路 → 必须存在一家 1km 以内的店（证明真的按用户坐标算）
+            # 用户就在国庆路步行街 → 必须存在一家 1km 以内的店（证明真的按用户坐标算）
             near = c.eval("""(function(){
               var list = MOCK.shops.filter(function(s){return s.lat!=null;})
                 .map(function(s){return UserLoc.shopKm(s);})
@@ -305,7 +311,7 @@ def main():
             #   本项目里「距离」有**两个都正确**的基准：
             #     · `shop.distance`   —— 后端权威值，基准是**市中心**
             #     · `UserLoc.shopKm()` —— 客户端现算，基准是**用户位置**
-            #   同一家店这两个数**本来就不相等**（例：s_003 到市中心 2.3 / 到春熙路 0.9）。
+            #   同一家店这两个数**本来就不相等**（例：钱亮亮小火锅到市中心 0.39 / 到步行街 0.77）。
             #   我一开始断言「分组的 km 与实际不符」，其实是把「用户口径」拿去比「市中心口径」，
             #   白白排查了两轮。**断言前先想清楚比的是哪个口径。**
             #
@@ -437,7 +443,7 @@ def main():
                   })()""") is True)
             c.shot("01-L1-授权成功-距我的位置.png")
 
-        # 换到城北，验证排序**真的**跟着用户位置变了
+        # 换到城北（月塘镇方向），验证排序**真的**跟着用户位置变了
         c.send("Emulation.setGeolocationOverride",
                {"latitude": FAR_LAT, "longitude": FAR_LNG, "accuracy": 20})
         c.eval(CLEAR_POS)
@@ -451,7 +457,7 @@ def main():
         })()""")
         check("换到城北后「最近的店」也变了（排序真的跟着位置走）",
               far_near is not None and abs(float(far_near) - float(near or 0)) > 0.5,
-              "春熙路 %.1fkm → 城北 %.1fkm" % (near or -1, far_near or -1))
+              "步行街 %.1fkm → 城北 %.1fkm" % (near or -1, far_near or -1))
 
         # ================= 3. L2 拒绝 + 有缓存 =================
         print("\n[3] L2 拒绝授权但有缓存 → 用缓存坐标")
@@ -486,8 +492,11 @@ def main():
         check("进入 city 级别（降级到市中心）", ok,
               c.eval("JSON.stringify(UserLoc.state())"))
         if ok:
-            check("坐标就是市中心", c.eval("UserLoc.state().lat") == 30.6570 and
-                  c.eval("UserLoc.state().lng") == 104.0658)
+            # ⚠️ 断言用 `== ` 比浮点，前提是「降级基准」和这里写的是**同一个常量来源**：
+            #    user-loc.js 的 CITY_CENTER 与后端 DistanceCalculator.CITY_CENTER 都是
+            #    仪征市中心 (32.2728, 119.1845)。换城市时这三处要一起改。
+            check("坐标就是市中心", abs(c.eval("UserLoc.state().lat") - 32.2728) < 1e-6 and
+                  abs(c.eval("UserLoc.state().lng") - 119.1845) < 1e-6)
             check("isUser=false（界面必须知道这不是用户真实位置）",
                   c.eval("UserLoc.state().isUser") is False)
             check("降级原因是可读的中文（不是错误码）",
@@ -537,14 +546,14 @@ def main():
         print("\n[7] 手动设定位置（不依赖浏览器授权）")
         c.open(BASE + "/client/feed.html?api=1")
         time.sleep(1)
-        c.eval("UserLoc.setManual(30.7380, 104.1460, '大熊猫基地')")
+        c.eval("UserLoc.setManual(%s, %s, '%s')" % (MANUAL_LAT, MANUAL_LNG, MANUAL_NAME))
         st = c.eval("JSON.stringify(UserLoc.state())")
         check("setManual 后 src 变 manual", c.eval("UserLoc.state().src") == "manual", st)
         check("setManual 后距离立即按新位置算",
               c.eval("UserLoc.state().isUser") is True
-              and abs(c.eval("UserLoc.state().lat") - FAR_LAT) < 1e-6, st)
+              and abs(c.eval("UserLoc.state().lat") - MANUAL_LAT) < 1e-6, st)
         check("setManual 的说明文案带上了地点名",
-              "大熊猫基地" in str(c.eval("UserLoc.state().reason")),
+              MANUAL_NAME in str(c.eval("UserLoc.state().reason")),
               c.eval("UserLoc.state().reason"))
 
         # ================= 8. 缓存写入 =================

@@ -39,10 +39,19 @@ OUT = os.path.join(ROOT, ".shots-merchant")
 DEBUG_PORT = 9337
 FRONT = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:5173").rstrip("/")
 
-# 演示商家：mock 里 currentMerchant.shopId，也是 DataSeeder 里的第一家店
+# 演示商家：mock 里 currentMerchant.shopId，也是 DataSeeder 里的第一家店（PINNED）
 DEMO_SHOP = "s_001"
-DEMO_SHOP_NAME = "蜀香小馆"
 
+# ⚠️ 这里**故意不写死店名**（血泪）。
+#
+# 曾经有 `DEMO_SHOP_NAME = "蜀香小馆"`，并断言「页面店名 == 这个常量」。
+# 22 家演示数据时 `s_001` 恰好叫这个名字，所以碰巧通过。
+# 数据扩到仪征 1620 家真实店铺后，`s_001` 被 PINNED 成「永安水煮活鱼」
+# （保住商家端登录测试依赖的那条记录），这条断言立刻假红。
+#
+# 真正该断言的是「**页面显示的是后端真数据，不是 mock.js 里的写死假数据**」——
+# 那就应该拿**后端返回的店名**去比（见第 2 节），而不是跟一个硬编码常量比。
+# 硬编码等价于「把测试绑在某一条种子记录上」，数据一换就碎。
 CHROME_CANDS = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
@@ -236,8 +245,11 @@ def main():
         })()""")
         check("页面读到的就是我这家店", d.get("shop") == SHOP["name"],
               "页面=%s 后端=%s" % (d.get("shop"), SHOP["name"]))
-        check("店铺名不是写死的「蜀香小馆」之外的假数据",
-              d.get("shop") == DEMO_SHOP_NAME, "得到 %s" % d.get("shop"))
+        # 「不是写死的假数据」＝ 页面店名必须是**后端真名**，且**非空**。
+        # 不与任何硬编码常量比 —— 那等于把测试绑死在一条种子记录上（见文件头说明）。
+        check("店铺名来自后端真数据（不是空值/占位假数据）",
+              bool(d.get("shop")) and d.get("shop") == SHOP["name"],
+              "页面=%s 后端=%s" % (d.get("shop"), SHOP["name"]))
         check("今日状态卡有内容", bool(d.get("title")), str(d.get("title")))
 
         # 冷却倒计时要跟后端口径一致：s_001 今天已发布 → 显示倒计时

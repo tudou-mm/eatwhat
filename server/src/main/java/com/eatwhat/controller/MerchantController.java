@@ -214,28 +214,9 @@ public class MerchantController {
                                              @RequestBody Map<String, Object> body) {
         AuthContext.assertSelf(shopId);
         Shop s = shopService.get(shopId);
-        if (body.get("name") != null) s.setName(body.get("name").toString());
-        if (body.get("cuisine") != null) s.setCuisine(body.get("cuisine").toString());
-        if (body.get("intro") != null) s.setIntro(body.get("intro").toString());
-        if (body.get("address") != null) s.setAddress(body.get("address").toString());
-        if (body.get("phone") != null) s.setPhone(body.get("phone").toString());
-        if (body.get("hours") != null) s.setHours(body.get("hours").toString());
-        if (body.get("cover") != null) s.setCover(body.get("cover").toString());
-        if (body.get("logo") != null) s.setLogo(body.get("logo").toString());
-        // 坐标：改了经纬度就必须重算 distance —— 否则地图上挪了两公里，
-        // 客户端「附近」里还是按旧位置排，两边对不上。
-        // 只认「两个都传了」的情况，传半边会让店铺落到 (新lat, 旧lng) 这种不存在的位置。
-        Double lat = shopService.toDouble(body.get("lat"));
-        Double lng = shopService.toDouble(body.get("lng"));
-        boolean moved = lat != null && lng != null
-                && (!lat.equals(s.getLat()) || !lng.equals(s.getLng()));
-        if (lat != null) s.setLat(lat);
-        if (lng != null) s.setLng(lng);
-        if (moved) {
-            Shop saved = shopService.save(s);
-            return R.ok(views.shop(shopService.refreshDistance(saved)));
-        }
-        return R.ok(views.shop(shopService.save(s)));
+        // 统一走 ShopService.updateFromMerchant —— 它会一并刷新 updatedAt，
+        // 否则这家店改了简介也不会进客户端首屏的保底名单（静默失效）。
+        return R.ok(views.shop(shopService.updateFromMerchant(s, body)));
     }
 
     /** 我的评论（该店所有菜品下的评论） */

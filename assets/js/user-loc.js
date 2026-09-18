@@ -49,8 +49,8 @@
   var CACHE_TTL_MS = 30 * 60 * 1000;       // 30 分钟
   var TIMEOUT_MS = 8000;                   // 定位超时：手机在室内可能很慢
 
-  // 降级基准：成都天府广场。与后端 DistanceCalculator.CITY_CENTER 保持一致。
-  var CITY_CENTER = { lat: 30.6570, lng: 104.0658, name: '成都' };
+  // 降级基准：仪征市中心。与后端 DistanceCalculator.CITY_CENTER 保持一致。
+  var CITY_CENTER = { lat: 32.2728, lng: 119.1845, name: '仪征' };
 
   var state = {
     pos: null,          // 当前生效坐标 {lat, lng}
@@ -130,7 +130,7 @@
     state.pos = { lat: CITY_CENTER.lat, lng: CITY_CENTER.lng };
     state.src = 'city';
     state.stale = false;
-    state.reason = reason || '无法定位，距离以成都市中心为基准';
+    state.reason = reason || '无法定位，距离以仪征市中心为基准';
     return true;
   }
 
@@ -234,7 +234,7 @@
   /**
    * 两点球面距离（km，一位小数）。
    * 与后端 `DistanceCalculator.haversine` 同口径（R=6371）。
-   * ⚠️ 别改成平面近似 —— 成都北纬 30°，东西向会被高估约 15%。
+   * ⚠️ 别改成平面近似 —— 仪征北纬 32.3°，东西向会被高估约 18%。
    */
   function km(lat1, lng1, lat2, lng2) {
     if (lat1 == null || lng1 == null || lat2 == null || lng2 == null) return null;

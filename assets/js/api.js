@@ -966,7 +966,7 @@
       path: function (p) { return '/admin/audit/' + p.id + '/approve'; },
       body: function (p) { return { reviewer: p.reviewer || '平台运营', force: !!p.force }; },
       // 本地没有 DistanceCalculator，用「到市中心的近似距离」补齐：
-      // 与后端 Haversine 口径一致（成都锚点 30.6570, 104.0658），
+      // 与后端 Haversine 口径一致（仪征锚点 32.2728, 119.1845），
       // 不做这件事的话，本地模式审核通过的店 distance 永远是 null，
       // 会静默排到「附近」列表末尾 —— 看起来像审核没生效。
       local: function (p) {
@@ -1469,7 +1469,7 @@
         var s = {
           id: 'p_' + Date.now(),
           name: p.name, cuisine: p.cuisine, phone: p.phone,
-          address: p.address, city: p.city || '成都市', district: p.district || '武侯区',
+          address: p.address, city: p.city || '仪征市', district: p.district || '真州镇',
           hours: p.hours, intro: p.intro,
           cover: p.cover, logo: p.logo || p.cover,
           lat: p.lat != null ? p.lat : null,   // 商家选的坐标：存下来但此刻不参与排序
@@ -1575,7 +1575,7 @@
    * ⚠️ 两边算法必须一起改：改了后端 Haversine 而忘了这里，
    * 就会出现「本地模式审核的店距离 3.2km、连后端后变成 2.7km」这种鬼故事。
    */
-  var CITY_CENTER = { lat: 30.6570, lng: 104.0658 };  // 成都天府广场（与后端一致）
+  var CITY_CENTER = { lat: 32.2728, lng: 119.1845 };  // 仪征市中心（与后端 DistanceCalculator 一致）
 
   function localDistanceKm(lat, lng) {
     if (lat == null || lng == null) return null;

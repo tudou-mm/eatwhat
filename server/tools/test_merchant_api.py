@@ -358,7 +358,7 @@ def main():
 
     ok, r = call("POST", "/api/merchant/apply", {
         "name": "回归测试小馆", "phone": "13900001111", "cuisine": "川菜",
-        "city": "成都市", "district": "武侯区", "address": "成都市武侯区回归路 1 号",
+        "city": "仪征市", "district": "真州镇", "address": "仪征市真州镇回归路 1 号",
         "hours": "10:00 - 22:00", "intro": "自动化测试提交"
     })
     check("入驻申请成功", ok, str(r))

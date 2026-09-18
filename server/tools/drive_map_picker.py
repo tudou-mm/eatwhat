@@ -218,9 +218,11 @@ def main():
               c.eval("typeof MapPicker"))
         check("内置地址库有 40 个真实地标", c.eval("MapPicker.places.length") == 40,
               c.eval("MapPicker.places.length"))
-        # 距离公式要和后端一致（拿成都市中心到一个已知点比）
+        # 距离公式要和后端一致（拿仪征市中心到一个已知点比）
+        # ⚠️ 这对坐标**故意保留成都的宽窄巷子→市中心**：这里测的是 Haversine 公式本身，
+        #    与城市无关，换成仪征坐标反而更难记住「1.6km」这个基准值。
         d = c.eval("Math.round(MapPicker.distanceKm(30.6699,104.0574,30.6570,104.0658)*10)/10")
-        check("距离公式与后端同口径（宽窄巷子→市中心 ≈1.6km）", abs(float(d) - 1.6) < 0.15, d)
+        check("距离公式与后端同口径（宽窄巷子→成都市中心 ≈1.6km）", abs(float(d) - 1.6) < 0.15, d)
 
         # ---- Key 配置文件（assets/data/amap-key.js）是否被读进来 ----
         print("\n[1b] Key 配置文件读取")
@@ -266,7 +268,7 @@ def main():
                 # ⚠️ 刚打开弹层时「确认选点」必须是**禁用**的。
                 #   打开时会以地图中心点调一次逆地理编码（silent=true）来告诉用户
                 #   「中心在哪」。如果那次调用顺手把中心点当成「已选」，用户什么都不点
-                #   直接确认就会选中天府广场，而且地址栏里被填进一句没意义的坐标串。
+                #   直接确认就会选中市中心，而且地址栏里被填进一句没意义的坐标串。
                 #   （店铺资料页带 current 打开时是预设了选点的，那种情况应可点 —— 见第 6 组。）
                 check("刚打开弹层时「确认选点」是禁用的（中心点不算已选）",
                       c.eval("document.querySelector('[data-act=ok]').disabled") is True,
@@ -302,7 +304,7 @@ def main():
                 got = wait_for(
                     "(function(){"
                     "  var t=((document.querySelector('.mk-picked__c')||{}).innerText||'').replace(/\\s/g,'');"
-                    "  return t.indexOf(',') >= 0 && t !== '30.657000,104.065800';"
+                    "  return t.indexOf(',') >= 0 && t !== '32.272800,119.184500';"
                     "})()", 12)
                 picked_txt = str(c.eval("(document.querySelector('.mk-picked__c')||{}).innerText||''"))
                 check("真地图上点击后坐标已更新", got, picked_txt)
@@ -311,9 +313,9 @@ def main():
                 #  用界面文本断言反而更贴近「用户看得见什么」。）
                 nums = re.findall(r"-?\d+\.?\d*", picked_txt)
                 ok_range = (len(nums) == 2
-                            and 30.0 < float(nums[0]) < 31.0
-                            and 103.0 < float(nums[1]) < 105.0)
-                check("坐标有效（在成都范围内）", ok_range, picked_txt)
+                            and 32.0 < float(nums[0]) < 32.6
+                            and 118.9 < float(nums[1]) < 119.5)
+                check("坐标有效（在仪征范围内）", ok_range, picked_txt)
                 # 再给逆地理编码一点时间把中文地址查回来。
                 # ⚠️ 现在是**两条链路**：官方 Geocoder 插件 → 直连 REST 兜底。
                 #    本项目用的 Key 是「Web服务」类型，插件那条会被 10009 拒掉，
@@ -395,12 +397,12 @@ def main():
                   c.eval("document.querySelector('[data-act=ok]').disabled") is True)
             c.shot("03-无key-内置地址库.png")
 
-            # 搜索过滤
-            c.eval("(()=>{const i=document.querySelector('#mk-kw');i.value='春熙';i.dispatchEvent(new Event('input'));})()")
+            # 搜索过滤（关键词取自内置 40 地标里真实存在的一条）
+            c.eval("(()=>{const i=document.querySelector('#mk-kw');i.value='步行街';i.dispatchEvent(new Event('input'));})()")
             time.sleep(0.3)
             n2 = c.eval("document.querySelectorAll('.mk-item').length")
-            check("关键词搜索生效（搜「春熙」）", 0 < n2 < 40, "%s 条" % n2)
-            check("搜到的是春熙路", "春熙路" in str(c.eval(
+            check("关键词搜索生效（搜「步行街」）", 0 < n2 < 40, "%s 条" % n2)
+            check("搜到的是国庆路商业步行街", "步行街" in str(c.eval(
                 "(document.querySelector('.mk-item__n')||{}).innerText||''")))
 
             # 选一个
@@ -445,14 +447,14 @@ def main():
             "(function(){"
             "  var r = MOCK.act('merchant.apply', {"
             "    name:'选点验证店', cuisine:'川菜', phone:'13911112222',"
-            "    address:'成都市锦江区春熙路 1 号', city:'成都市', district:'锦江区',"
-            "    hours:'10:00 - 22:00', lat:30.6598, lng:104.0810 });"
+            "    address:'仪征市真州镇人民路 1 号', city:'仪征市', district:'真州镇',"
+            "    hours:'10:00 - 22:00', lat:32.2728, lng:119.1845 });"
             "  if(!r || !r.ok) return 'act失败:' + JSON.stringify(r);"
             "  var s = (MOCK.pendingShops||[]).filter(function(x){return x.name==='选点验证店'})[0];"
             "  if(!s) return '找不到落地的店';"
             "  return JSON.stringify({lat:s.lat, lng:s.lng, distance:s.distance});"
             "})()")
-        check("本地模式下入驻带上了 lat/lng", probe and "30.6598" in str(probe), probe)
+        check("本地模式下入驻带上了 lat/lng", probe and "32.2728" in str(probe), probe)
         check("待审店铺 distance 仍为 null（不参与排序）",
               probe and '"distance":null' in str(probe).replace(" ", ""), probe)
 

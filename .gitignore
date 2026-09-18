@@ -88,5 +88,12 @@ __pycache__/
 .venv/
 venv/
 
+# ---------- 种子生成的中间产物 ----------
+# server/tools/_gen/ 是 radar_to_seed.py 的中间产物（约 1MB JSON），
+# 内容可由 data/radar.db 完整重建 → 不进仓库，换机跑一遍脚本即可。
+# ⚠️ 但**最终产物 server/src/main/resources/seed/shops.json 必须提交**
+#    （DataSeeder 启动时读它，缺了就只能退到内置的 22 家演示店）。
+server/tools/_gen/
+
 # ---------- WorkBuddy 本地状态 ----------
 .workbuddy/
