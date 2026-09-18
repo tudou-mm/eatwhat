@@ -322,7 +322,32 @@ def main():
                                 "type": "blob", "sha": new_blob})
 
         if not entries:
-            print("[push] %d/%d %s 无文件变化，跳过" % (i, len(commits), c[:8]))
+            # ⚠️ 空提交（无文件变化）也必须**照建**，不能 continue。
+            #
+            # 踩过：本脚本原本在这里直接跳过，既没建 commit、也没推进
+            # `parent_sha`。后果是**后续提交挂到了错误的父节点上** ——
+            # `a(有文件) → b(空) → c(有文件)` 推上去会变成 `a → c`，
+            # b 被静默丢弃、c 的 parent 直接指向 a。
+            # 症状：本地与远端 sha 对不上，且历史里少了一个提交。
+            # （踩过：`docs: 补记 v1.9` 那个空提交就是这样丢的，
+            #   导致末尾提交的 parent 从 bb7bacd 变成了 e61e191。）
+            #
+            # tree 用 `base_tree`（即父提交的 tree）—— 这正是「无变化」的含义。
+            if base_tree is None:
+                # 根提交且无文件 = 空仓库，没有 tree 可用，只能跳过
+                print("[push] %d/%d %s 空根提交，跳过" % (i, len(commits), c[:8]))
+                continue
+            print("[push] %d/%d %s 无文件变化 → 建空提交（保持 parent 链完整）"
+                  % (i, len(commits), c[:8]))
+            cmt = gh.commit(owner, repo, meta["message"], base_tree,
+                            [parent_sha] if parent_sha else [],
+                            meta["author"], meta["committer"])
+            parent_sha = cmt["sha"]
+            new_head = cmt["sha"]
+            # base_tree 不变（本来就没变化）
+            same = "＝本地" if cmt["sha"] == c else "≠本地(sha 算法差异)"
+            print("[push] %d/%d %s → %s  (空提交)  sha %s"
+                  % (i, len(commits), c[:8], cmt["sha"][:8], same))
             continue
 
         tree_sha = gh.tree(owner, repo, base_tree, entries)["sha"]
