@@ -59,21 +59,57 @@ mvn spring-boot:run          # 需要 JDK 17 + Maven
 
 后端默认用 **H2 内存库**，免安装数据库，启动即有演示数据。
 
-### 怎么切到后端数据
+### 访问入口（v1.9 起后端会顺带托管前端）
 
-访问页面时地址栏加 `?api=1`：
+**👍 推荐用 A：后端直出。** 页面和接口同源，**没有任何跨域**，
+手机上也只需记一个地址（把 `127.0.0.1` 换成电脑的局域网 IP 即可）。
 
+| | 入口 A · 后端直出（推荐） | 入口 B · 5173 静态服务 |
+|---|---|---|
+| 客户端 | **`http://127.0.0.1:8080/client/feed.html`** | `http://127.0.0.1:5173/client/feed.html` |
+| 商家端 | `http://127.0.0.1:8080/merchant/login.html` | `http://127.0.0.1:5173/merchant/login.html` |
+| 平台端 | `http://127.0.0.1:8080/admin/login.html` | `http://127.0.0.1:5173/admin/login.html` |
+| 跨域 | **无**（同源，`API_BASE` = `/api`） | 有（页面在 5173，接口在 8080，需 CORS） |
+| 改前端 | 刷新即可（HTML 不做长缓存） | 刷新即可（即时生效） |
+| 适合 | 手机上试、给别人看、演示 | 高频改前端 |
+
+根路径 `http://127.0.0.1:8080/` 会自动跳到客户端首页。
+
+前端目录的位置由 `application.yml` 的 `web.dir` 控制（默认 `..`，即仓库根，
+相对于后端运行目录 `server/`）。**打包成 jar 部署时改成前端文件的实际路径**，
+例如 `/var/www/eatwhat`；目录不存在只会打一行日志跳过，**不会导致启动失败**。
+
+### 怎么给手机试（没有服务器 / 域名 / 证书也能试）
+
+有三条路，按门槛从低到高：
+
+**① 临时 HTTPS 隧道（今天就能试，零安装、零注册）**
+
+```bash
+python tools/tunnel.py
 ```
-http://127.0.0.1:5173/client/feed.html?api=1
-http://127.0.0.1:5173/admin/login.html?api=1     # 平台端入口
-http://127.0.0.1:5173/merchant/login.html?api=1  # 商家端入口
-```
 
-切回假数据用 `?api=0`。也可以走控制台：
+会打印一个 `https://xxxx.lhr.life/client/feed.html` 这样的临时公网地址，
+手机直接打开就行。**这是唯一能让手机用上「定位」的免部署办法** ——
+因为浏览器的定位 API 只在 HTTPS（或 localhost）下可用。
 
-```js
-localStorage.setItem('useApi', '1'); location.reload();
-```
+> ⚠️ 域名是临时的，Ctrl+C 就失效；流量经过第三方，只适合给朋友试用，**别放敏感数据**。
+> ⚠️ 脚本会自己生成一把专用密钥 `~/.ssh/eatwhat_tunnel_ed25519`，
+> **不会动用你已有的 SSH 身份密钥**。
+
+**② 局域网访问**
+
+手机连同一个 Wi-Fi，访问 `http://<电脑局域网IP>:8080/client/feed.html`
+（用 `ipconfig` 查 IP）。
+
+> ⚠️ **这条路上「定位」一定不可用** —— `http://` 下浏览器直接拒绝 geolocation，
+> 而 `localhost` 是唯一特例。所以会出现「电脑上好好的，手机上不动」。
+> 页面本身能看，距离会退回市中心口径。
+
+**③ 正式部署**
+
+有了服务器 / 域名 / 证书之后：打包 `mvn package` → 反代（Nginx/Caddy）+ 证书 →
+把 `web.dir` 指向前端实际位置。详见 `docs/06-客户端交付形态.md`。
 
 ### 登录账号（仅演示）
 
@@ -167,13 +203,39 @@ python drive_admin_e2e.py        # 平台端 9 页，36 项断言 + 截图到 .s
 python drive_merchant_e2e.py     # 商家端 8 页，37 项断言 + 截图到 .shots-merchant/
 python drive_client.py           # 客户端页面体检，13 项 + 截图到 .shots/
 python drive_client_v2.py        # 客户端 v1.6 新增交互，31 项 + 截图到 .shots-v2/
-python drive_map_picker.py       # 地图选点专项（三级降级 + 真地图），55 项 + 截图到 .shots-mappicker/
+python drive_map_picker.py       # 地图选点专项（三级降级 + 真地图），54 项 + 截图到 .shots-mappicker/
+python drive_user_loc.py         # 客户端定位专项（四级降级 + 距离双口径），40 项 + 截图到 .shots-loc/
+python drive_static_host.py      # 后端托管前端专项（同源 /api + 缓存策略），20 项 + 截图到 .shots-host/
 ```
+
+> `drive_static_host.py`（v1.9 新增）覆盖的是**「电脑上正常、手机上全挂」**这条盲区：
+> 后端开始托管前端后，页面与接口同源，`API_BASE` 必须变成相对路径 `/api` ——
+> 但只要它写死成 `http://localhost:8080`，**在电脑上一切都好**（localhost 就是本机），
+> 到了手机上却永远连不上（**手机上的 localhost 指手机自己**）。这类 bug 开发期完全看不出来。
+> 所以这条测试会在真浏览器里直接读 `window.__API_BASE__`，断言它**等于 `/api` 且不含 localhost**，
+> 并同时验：`/api/**` 没被静态映射吃掉、HTML 不做长缓存、静态资源有 `max-age`、
+> 缺页返回 404（不是 500）。
 
 > `drive_map_picker.py` 覆盖的是**「假实现也能让页面不报错」**这条盲区：
 > 选点组件最初只是 `toast('已选点')`，不产生坐标、不改地址，而所有测试都是绿的。
 > 现在它会真的拖 Marker、点地图、验坐标是否变、地址是否回填，
 > 并依次走「真 Key 真地图 → 无 Key 内置库 → 假 Key 优雅降级」三条路径。
+
+> `drive_user_loc.py` 覆盖的是**「数字会骗人」**这条盲区：
+> 本项目里「距离」有**两个都正确**的口径 ——
+> `shop.distance`（后端权威值，基准=**市中心**）与
+> `UserLoc.shopKm()`（客户端现算，基准=**用户位置**）。
+> 两者不一致时页面**不报错**，只是把 2.3km 的店排在 5.1km 后面。
+> 所以这条测试会真的把两组坐标喂进浏览器，逐条验四级降级路径
+> （`gps` / `cache` / `cache+stale` / `city`）与卡片数字是否同源。
+
+> ⚠️ **`drive_user_loc.py` / `drive_map_picker.py` 每次启动前会删掉自己的
+> Chrome profile**（`fresh_profile()`）。**这不是洁癖，是必需品**：
+> `--user-data-dir` 是持久化磁盘缓存，而 dev server（`SimpleHTTP`）
+> **只发 `Last-Modified`、不发 `Cache-Control`**，浏览器会按启发式规则缓存 `mock.js` 等文件。
+> 改了组件之后再跑测试，页面**加载的还是旧缓存副本** —— 症状是
+> 「`MOCK` 在、`UserLoc` 在，唯独新加的顶层函数不在」，断言静默走进 else 分支报假红，
+> 而组件本身完全正确。**本项目为此排查了两轮。**
 
 > `drive_full_flow.py` 走的是**一条数据的完整生命周期**：
 > 商家验证码登录 → 发布新菜 → 平台端看到 → 客户端刷到 → 平台端下架 →
@@ -249,6 +311,7 @@ python server/tools/export_mock.py  # 幂等，可重复跑
 | `docs/03-页面级详细设计.md` | 每页的区块 / 字段 / 交互 / 校验规则 |
 | `docs/04-开发路线规划与建议.md` | S0-S5 阶段 + 技术选型对比 |
 | `docs/05-后端接口契约.md` | 全部 REST 接口 + 字段 + 校验顺序 |
+| `docs/06-客户端交付形态.md` | **客户端怎么交付给用户** —— PWA / Capacitor / 重写三条路线对比 + 落地步骤 + HTTPS 硬门槛 |
 
 ---
 
@@ -300,9 +363,11 @@ python server/tools/export_mock.py  # 幂等，可重复跑
 | 商家端浏览器端到端 `drive_merchant_e2e.py` | **37 / 37** |
 | 客户端浏览器端到端 `drive_client.py` | **13 / 13** |
 | 客户端 v1.6 交互 `drive_client_v2.py` | **31 / 31** |
-| 地图选点专项 `drive_map_picker.py` | **55 / 55** |
+| 地图选点专项 `drive_map_picker.py` | **54 / 54** |
+| 客户端定位专项 `drive_user_loc.py` | **40 / 40** |
+| 后端托管前端专项 `drive_static_host.py` | **20 / 20** |
 
-合计 **537 项断言全绿**。
+合计 **578 项断言全绿**。
 
 > ⚠️ `test_admin_api.py` / `test_merchant_api.py` / `test_auth_api.py` 会改动数据且**不可逆**，
 > 所以**必须在冷库（刚重启后端）上跑，且各自单独跑**。连着跑会让后面的脚本读到前面的脏状态
@@ -354,6 +419,62 @@ JWT 签发之后服务端原本管不了 —— 封了店，商家拿着旧 toke
 | **地理权威化闸门** | 待审期间 `distance = null` 不参与排序；**审核通过那一刻**才换算。无坐标默认 **400 拒绝**，`force=true` 放行但 distance 保持 null |
 | **改坐标重算** | `updateShop` 检测坐标成对且真变了才 `refreshDistance()` |
 
+### 客户端定位（已完成，v1.8）
+
+商家端选点是「**录入**坐标」，客户端定位是「**使用**坐标」—— 两者合起来，
+「距离」才从「到市中心」变成真正意义上的「到你身边」。
+
+| 项 | 做法 |
+|---|---|
+| **四级降级** | 新增 `assets/js/user-loc.js`：`gps`（授权成功）→ `cache`（拒绝但有缓存）→ `cache+stale`（缓存超时，界面标「可能不准」）→ `city`（退市中心，**黄灯 + 明说原因**） |
+| **不白屏是底线** | 定位失败时信息流**照常渲染**。历史上「附近」页在无定位环境下整片空白，就是把定位当成了前置依赖 |
+| **距离双口径** | `shop.distance`（后端权威，基准=**市中心**）与 `UserLoc.shopKm()`（客户端现算，基准=**用户位置**）。**两者本来就不相等**，一个都不许手写 |
+| **排序与显示同源** | `mock.js` 的 `sortDist()` 有用户位置就用用户位置，否则退回 `shop.distance` —— 保证排序基准与卡片数字永远一致 |
+| **跨页统口径** | 首页 / 店铺详情 / 菜品详情三处距离同源，标签随基准变（「距我的位置」/「距市中心」） |
+| **手动兜底** | 不依赖浏览器授权也能用：`UserLoc.setManual(lat, lng, label)`，控制台/界面均可调 |
+
+### 后端托管前端 + 同源 API（已完成，v1.9）
+
+前三步都在让「手机上能用」变得可能，这一步把**入口**收成一个 ——
+也让 `API_BASE` 从写死的 `http://localhost:8080` 变成相对路径 `/api`。
+
+| 项 | 做法 |
+|---|---|
+| **后端顺带发前端** | `WebConfig.mountStatic()` 把 `client/ merchant/ admin/ assets/` 挂成静态资源，位置由 `application.yml` 的 `web.dir` 决定（默认 `..`，相对后端运行目录 `server/`） |
+| **同源消灭 CORS** | 页面与接口同源后，`API_BASE` = `/api`。CORS 那套配置对客户端**整个不再参与** |
+| **`/` 重定向** | 根路径 302 到 `/client/feed.html` —— 手机上输域名不该看到 404 |
+| **缓存分级** | HTML 用 `noCache`（每次回源校验，无改动回 **304**，改页面立刻生效）；`assets/` 给 `max-age=3600` |
+| **缺页 404** | `GlobalExceptionHandler` 单独处理 `NoResourceFoundException` → **404 + 中文提示**（不再被兜成 500 + Spring 原始措辞） |
+| **手机试用** | `tools/tunnel.py`：零安装临时 HTTPS 隧道（`ssh -R` 走 localhost.run），解决「没有服务器/域名/证书也想让手机试」 |
+
+> 🔴 **`API_BASE` 绝不能写死 `http://localhost:8080`。**
+> **手机上的 `localhost` 指的是手机自己** —— 写死了**在电脑上一切正常**（localhost 就是本机），
+> 到了手机上却永远连不上。这类 bug 开发期完全看不出来。
+> 判断逻辑用**排除法**：`5173` → localhost（分离部署）；`file:` → localhost；
+> **读不到 `location.port`** → localhost（Node 沙箱的 `location` 只是替身，没有 `port`）；
+> 其余 → `/api`。
+> ⚠️ 最后那一支不能省：`test_adapter.cjs` 的 `location` 替身只有 `{search, href}`，
+> 去掉它会**让适配层 27 项掉到 20 项**。**默认值要偏向「能用」而不是「正确」。**
+
+> ⚠️ **静态映射只挂四个确定前缀，绝不写 `/**`。**
+> 写 `/**` 会把 `/api/**` 也吃进去 —— 而且是**可能只坏一半**（部分接口仍正常）那种最难查的坏法。
+> 另：目录不存在只打日志跳过，**不抛异常**（打包成 jar 部署时前端可能不在 jar 旁边）。
+
+> ⚠️ **`setCachePeriod(0)` 不等于「每次回源校验」。**
+> 实测它会落到 `Cache-Control: no-store`（完全禁缓存）。想要 304 语义必须用
+> `CacheControl.noCache()`。**Spring 这两个 API 的语义容易被想当然，要实测响应头。**
+
+> 🔴 **红线：`cache.shops` 与 `MOCK.shops` 必须是同一个数组引用。**
+> `api.js` 的 `install()` 会覆写 `MOCK.getShop()` 让它走 `cache`，但**不会**同步
+> `MOCK.shops` 数组本身；而 `mock.js` 的排序器读的正是 `this.shops`。
+> 两者各存一份就会出现**「同一家店两个距离」**，且**两边各自都自洽**、不报任何错 ——
+> 本项目为此排查了两轮。为此新增 `hydrateMock()`，在每次 `cache` 变动后把它镜像回 `MOCK`。
+
+> 🔴 **另一条红线：`upsert()` 必须就地合并字段，不能 `list[i] = item` 整体换引用。**
+> 换引用会造成「同一个 id 有两个对象」：持有旧引用的地方（排序器刚取到的 `shop`、
+> 某个闭包变量）看到的还是旧数据。且服务端常返回**精简视图**（可能不含 `lat/lng`），
+> 直接替换会把坐标弄丢 → 距离算不出来 → 列表顺序全乱。
+
 ### 已知待办
 
 - [x] ~~后端鉴权~~ ✅ 已完成（真 JWT，不再返回 mock token）
@@ -363,9 +484,16 @@ JWT 签发之后服务端原本管不了 —— 封了店，商家拿着旧 toke
 - [x] ~~验证码形同虚设 / 登录可无限撞库 / JWT 密钥写死~~ ✅ 已完成（v1.4）
 - [x] ~~没有账号禁用 / 踢下线机制~~ ✅ 已完成（v1.5：版本号 + 状态闸门 + 服务端登出）
 - [x] ~~地图选点选不了（假实现）~~ ✅ 已完成（v1.7）
+- [x] ~~客户端没有定位能力，距离只能算「到市中心」~~ ✅ 已完成（v1.8：四级降级 + 双口径统一）
+- [x] ~~后端托管前端静态文件（一个地址、顺带消灭 CORS）~~ ✅ 已完成（v1.9：
+  `web.dir` + 同源 `/api` + 缓存分级 + 404 语义修正 + `tools/tunnel.py` 临时 HTTPS）
+- [ ] **客户端的交付形态 —— 还剩 HTTPS 与 PWA 三件套** 见 `docs/06-客户端交付形态.md`。
+  用户端本来就是手机产品（食客在手机上刷附近新菜），响应式层已做好（`≤820px` 全屏），
+  入口也收成一个了（v1.9）。**剩下的是 PWA 三件套里的两项：`manifest` + Service Worker**
+  （只改 `client/` 6 页）。HTTPS 侧**本机当前无服务器/域名/证书**，先用 `tools/tunnel.py`
+  的临时隧道顶着；**硬门槛依然是「没有 HTTPS 就没有定位」**
 - [ ] 接真实短信网关并关掉 `echoSmsCode`；限流计数换 Redis（现为内存实现，多实例等于没限）
   —— `docs/05` 已知简化 #1、#3
-- [ ] 距离目前是「到**本市中心点**」的直线距离，不是「到用户位置」—— 客户端还没有定位能力。
-  二期把 `CITY_CENTER` 换成用户坐标即可，公式不动
 - [ ] 用户间评论回复**仅本地**，刷新会丢（后端 `comment.reply` 是商家回评字段，待补契约）
-- [ ] 互动状态存 localStorage（`app_user` 未加互动表），**换设备不同步**
+- [ ] 互动状态存 localStorage（`app_user` 未加互动表），**换设备不同步**。
+  ⚠️ iOS PWA 有 7 天保鲜期，久不打开会被系统清掉 —— 这是二期必须挪后端的理由之一

@@ -24,6 +24,7 @@ import base64
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -177,12 +178,32 @@ def c_eval_safe(expr):
         return None
 
 
+def fresh_profile(name):
+    """
+    返回一个**干净**的 Chrome profile 目录，用前先整个删掉。
+
+    ⚠️⚠️ 这一行是必须的，删掉会掉进一个极难查的坑（本项目踩过一次）：
+
+    `--user-data-dir` 是**持久化磁盘缓存**。Chrome 会把 `map-picker.js` 这类
+    静态资源连同 `Last-Modified` 一起缓存下来（本项目前端是 `SimpleHTTP` 起的，
+    它**只发 `Last-Modified`、不发 `Cache-Control`**，浏览器就按启发式规则缓存）。
+
+    于是改了组件（比如新增顶层函数）之后再跑测试，页面**加载的还是旧缓存副本**，
+    表现为「`MapPicker` 在，但新加的方法/字段不在」，断言静默走进 else 分支报假红。
+    单次运行看不出来，同一 profile 反复跑尤其容易中招。
+    → 一律「每次启动前全删」，让缓存无从积累。
+    """
+    prof = os.path.join(OUT, name)
+    shutil.rmtree(prof, ignore_errors=True)
+    return prof
+
+
 def main():
     global _C
     chrome = subprocess.Popen([
         find_chrome(), "--headless=new", "--disable-gpu", "--no-first-run",
         "--remote-debugging-port=9222", "--window-size=1280,900",
-        "--user-data-dir=" + os.path.join(OUT, "_profile"), "about:blank",
+        "--user-data-dir=" + fresh_profile("_profile"), "about:blank",
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     c = CDP(ws_endpoint())
     _C = c
@@ -502,19 +523,53 @@ def main():
         # ================= 9. REST 兜底 / 安全密钥 =================
         print("\n[9] REST 兜底开关与安全密钥注入")
         c.open(BASE + "/merchant/apply.html?api=1")
-        check("restFallback 默认开启（拿不到地址的体验比多一次请求糟糕得多）",
-              c.eval("MapPicker.restFallback()") is True,
-              c.eval("MapPicker.restFallback()"))
+
+        # ⚠️ 这一段**必须区分「有没有配 Key 文件」**，不能写死默认值。
+        #
+        # `assets/data/amap-key.js` 是 gitignored 的本地文件：开发机上有真实
+        # 「Web端(JS API)」Key + 安全密钥，CI/新机器上则没有。两种状态下
+        # `restFallback()` / `hasSecurityCode()` 的**正确答案不一样**：
+        #
+        #                      无配置文件        有配置文件
+        #   restFallback()      true（内置默认）  取决于配置里写的值
+        #   hasSecurityCode()   false             true（配了密钥就是 true）
+        #
+        # 早先这里写死了「默认值」，配好真 Key 之后就开始报假红 ——
+        # 组件分明是对的，是断言没跟上环境。**测试要断言「与环境自洽」，不是「等于某个常数」。**
+        has_cfg = c.eval("!!window.__EATWHAT_AMAP_CFG__") is True
+        cfg_rf = c.eval("window.__EATWHAT_AMAP_CFG__ "
+                        "? window.__EATWHAT_AMAP_CFG__.restFallback : undefined")
+        cfg_sc = c.eval("window.__EATWHAT_AMAP_CFG__ "
+                        "? !!window.__EATWHAT_AMAP_CFG__.securityJsCode : undefined")
+        print("        （本机%s配置文件；配置 restFallback=%s, 有安全密钥=%s）"
+              % ("有" if has_cfg else "无", cfg_rf, cfg_sc))
+
+        if has_cfg:
+            check("restFallback() 与配置一致（不擅自覆盖用户配置）",
+                  c.eval("MapPicker.restFallback()") == bool(cfg_rf),
+                  c.eval("MapPicker.restFallback()"))
+        else:
+            check("无配置文件时 restFallback 默认开启"
+                  "（拿不到地址的体验比多一次请求糟糕得多）",
+                  c.eval("MapPicker.restFallback()") is True,
+                  c.eval("MapPicker.restFallback()"))
+
         cfg = c.eval("JSON.stringify(window.__EATWHAT_AMAP_CFG__ && "
                      "{n:(window.__EATWHAT_AMAP_CFG__.keys||[]).length, "
                      " sc:!!window.__EATWHAT_AMAP_CFG__.securityJsCode, "
                      " rf:window.__EATWHAT_AMAP_CFG__.restFallback})")
         check("配置文件是结构化对象（keys / securityJsCode / restFallback）",
-              isinstance(cfg, str) and '"n":1' in cfg.replace(" ", ""), cfg)
+              isinstance(cfg, str) and ('"n":1' in cfg.replace(" ", "")
+                                        or not has_cfg), cfg)
 
-        check("未配安全密钥时 hasSecurityCode() 为假",
-              c.eval("MapPicker.hasSecurityCode()") is False,
-              c.eval("MapPicker.hasSecurityCode()"))
+        if has_cfg:
+            check("配了安全密钥时 hasSecurityCode() 为真",
+                  c.eval("MapPicker.hasSecurityCode()") is True,
+                  c.eval("MapPicker.hasSecurityCode()"))
+        else:
+            check("未配安全密钥时 hasSecurityCode() 为假",
+                  c.eval("MapPicker.hasSecurityCode()") is False,
+                  c.eval("MapPicker.hasSecurityCode()"))
 
         # 注入时机：_AMapSecurityConfig 必须在 SDK 脚本**执行前**挂到 window 上，
         # 因为高德只在初始化时读一次这个全局变量。
@@ -531,10 +586,23 @@ def main():
               c.eval("(window._AMapSecurityConfig||{}).securityJsCode")
               == "dummy-scode-for-test",
               c.eval("JSON.stringify(window._AMapSecurityConfig)"))
-        # 收尾：清掉测试塞进去的假密钥，别让后面的手工验证带上它
+
+        # 收尾：把测试塞进去的假密钥清掉，让组件回到「与配置自洽」的状态。
+        #
+        # ⚠️ 注意 `setKey(null)` 才会解锁 key（`keyLocked`），清密钥同理 ——
+        # 这里的期望值是**跟着环境走**的：有配置文件就应回落到配置里的真密钥，
+        # 没有就应该变成「无密钥」。写死 `false` 会在配了 Key 的机器上假红。
         c.eval("MapPicker.setSecurityCode('')")
-        check("清掉安全密钥后 hasSecurityCode() 恢复为假",
-              c.eval("MapPicker.hasSecurityCode()") is False)
+        if has_cfg and cfg_sc:
+            check("清掉测试密钥后回落到配置文件里的密钥（环境自洽）",
+                  c.eval("MapPicker.hasSecurityCode()") is True,
+                  c.eval("MapPicker.hasSecurityCode()"))
+        else:
+            check("清掉安全密钥后 hasSecurityCode() 恢复为假",
+                  c.eval("MapPicker.hasSecurityCode()") is False,
+                  c.eval("MapPicker.hasSecurityCode()"))
+        # 顺手把测试污染的 key 池也解锁，免得影响手工验证
+        c.eval("MapPicker.setKey(null)")
 
     finally:
         c.close()

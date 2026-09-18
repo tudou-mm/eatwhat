@@ -72,6 +72,16 @@ eatwhat:
     maxImageMb: 5
     maxVideoMb: 20
 
+  # ---------- 前端静态文件托管 ----------
+  # 让后端把 client/ merchant/ admin/ assets/ 一起发出去，
+  # 这样「一个地址」就能同时拿到页面和接口，手机不用再记 5173。
+  #
+  # ⚠️ 路径相对**后端运行目录**（即 server/），所以 `..` 指仓库根。
+  #    打包成 jar 部署时改成前端文件的实际位置，例如 /var/www/eatwhat。
+  #    目录不存在只是「没有前端可发」，不会导致启动失败（见 WebConfig.mountStatic）。
+  web:
+    dir: ..
+
   # ---------- 跨域白名单 ----------
   # 逗号分隔（Spring 会按 , 切成数组）。支持通配写法，如 http://localhost:[*]。
   # file:// 直开时 Origin 为 null 会被拦，那种场景请走 `python dev.py`。

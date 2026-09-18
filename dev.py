@@ -7,6 +7,15 @@
     python dev.py --api-only 只启动后端
     python dev.py --web-only 只启动前端
 
+⚠️ v1.9 之后**后端自己也会发前端页面**了，所以 5173 不再是必需品：
+      后端发的前端   http://127.0.0.1:8080/client/feed.html
+      5173 单独起的  http://127.0.0.1:5173/client/feed.html
+
+  · 用 8080：一个地址搞定，**同源没有跨域**，最接近真机部署
+  · 用 5173：改前端文件后刷新即可，不依赖后端；但要跨域（白名单已配好）
+
+两者数据完全一样，随你习惯。**要给手机试的话用 8080**（手机记一个地址就够）。
+
 JDK / Maven 查找顺序：
     环境变量 JAVA_HOME  →  WorkBuddy 隔离目录  →  PATH
 所以换电脑后只要装了 JDK 17，本脚本照样能跑。
@@ -143,12 +152,23 @@ def main():
             procs.append(p)
 
     base = 'http://127.0.0.1:%d' % WEB_PORT
+    api = 'http://127.0.0.1:%d' % BACKEND_PORT
     print()
-    print('  ── 访问地址（加 ?api=1 用真后端，不加则用本地假数据）──')
+    print('  ── 入口 A：后端直出（推荐，同源无跨域，手机也用这个）──')
+    print('    客户端  %s/client/feed.html?api=1' % api)
+    print('    商家端  %s/merchant/login.html?api=1' % api)
+    print('    平台端  %s/admin/login.html?api=1' % api)
+    print('    （根路径 %s/ 会自动转到客户端首页）' % api)
+    print()
+    print('  ── 入口 B：5173 静态服务（改前端刷新即可，但要跨域）──')
     print('    总览    %s/index.html' % base)
     print('    客户端  %s/client/feed.html?api=1' % base)
     print('    商家端  %s/merchant/login.html?api=1' % base)
     print('    平台端  %s/admin/login.html?api=1' % base)
+    print()
+    print('  ── 手机预览（需要 HTTPS，见 docs/06-客户端交付形态.md）──')
+    print('    cloudflared tunnel --url http://127.0.0.1:%d' % BACKEND_PORT)
+    print('    拿到临时 https 地址后用手机打开，即可安装到主屏并授权定位')
     print()
     print('  Ctrl+C 结束（只会结束本脚本启动的进程）')
 

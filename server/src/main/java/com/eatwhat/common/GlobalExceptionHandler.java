@@ -8,6 +8,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * 全局异常处理：保证前端永远拿到 {code,msg,data} 结构。
@@ -45,6 +47,24 @@ public class GlobalExceptionHandler {
     public ResponseEntity<R<Void>> handleTooLarge(MaxUploadSizeExceededException e) {
         return ResponseEntity.badRequest()
                 .body(R.fail(400, "文件太大，已超过服务端限制（图片 5MB / 视频 20MB）"));
+    }
+
+    /**
+     * 静态资源找不到 → **404，不是 500**。
+     *
+     * ⚠️ 自从后端开始托管前端页面（v1.9），这条变得很重要：
+     * 用户打错一个字母、或者页面被改名，本该看到「找不到页面」，
+     * 却在没有这条处理器时被下面的 catch-all 兜成
+     * `500 服务器内部错误：No static resource xxx` ——
+     * 既误导用户（以为是服务器挂了），也污染日志（ERROR 级）。
+     *
+     * 前端页面是给浏览器看的，这里返回的 JSON 会直接显示在页面上，
+     * 所以 msg 要写成**人能看懂的话**，不要吐 Spring 的原始措辞。
+     */
+    @ExceptionHandler({NoResourceFoundException.class, NoHandlerFoundException.class})
+    public ResponseEntity<R<Void>> handleNotFound(Exception e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(R.fail(404, "找不到该页面或资源"));
     }
 
     @ExceptionHandler(Exception.class)

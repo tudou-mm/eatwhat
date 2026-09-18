@@ -4,6 +4,26 @@
    图片使用 picsum 占位，替换真实素材时只改 url 即可。
    ========================================================== */
 
+/*
+ * 排序用的距离（km）。
+ *
+ * ⚠️ 这个函数的存在是为了让**排序基准**与**卡片上显示的数字**同源。
+ *    直接拿 `shop.distance` 排序是错的 —— 那是平台权威值（基准=市中心），
+ *    而卡片上显示的是「距你」。两者不一致时会出现
+ *    「显示 12.4km 的排在最前面」，用户一眼就看出排序是假的。
+ *
+ * 优先用 UserLoc（用户真实/手动位置）；没定位成功时退回 shop.distance。
+ * UserLoc 未加载（比如只引了 mock.js 的单元测试）也不报错，静默回退。
+ */
+function sortDist(shop) {
+  if (!shop) return null;
+  if (typeof window !== 'undefined' && window.UserLoc && window.UserLoc.shopKm) {
+    const km = window.UserLoc.shopKm(shop);
+    if (km != null) return km;
+  }
+  return shop.distance == null ? null : shop.distance;
+}
+
 const MOCK = {
 
   /* ---------- 当前登录用户（客户端） ---------- */
@@ -785,7 +805,12 @@ const MOCK = {
     return [...list].sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       if (a.weight !== b.weight) return b.weight - a.weight;
-      return a.distance - b.distance;
+      // 与 buildFeed 同口径 —— 两处不一致会出现「同一条列表两种顺序」
+      const da = sortDist(a), db = sortDist(b);
+      if (da === db) return 0;
+      if (da == null) return 1;
+      if (db == null) return -1;
+      return da - db;
     });
   },
 
@@ -976,7 +1001,24 @@ const MOCK = {
       if (!sa || !sb) return 0;
       if (sa.pinned !== sb.pinned) return sa.pinned ? -1 : 1;
       if (sa.weight !== sb.weight) return sb.weight - sa.weight;
-      if (sa.distance !== sb.distance) return sa.distance - sb.distance;
+
+      /*
+       * ⚠️ 距离必须与**卡片上显示的那个数字**同源，否则会出现
+       *    「显示 12.4km 的排在最前面」——用户一眼就看出排序是假的。
+       *
+       * 排序基准（`sortDist`）的优先级：
+       *   ① 用户当前位置（UserLoc 已拿到 GPS / 手动指定）→ 与卡片一致
+       *   ② 回退到 shop.distance（平台权威值，基准是市中心）
+       *
+       * 取不到坐标的店（distance=null）一律排最后 —— 它们没法参与距离比较，
+       * 但仍要显示出来（业务规则：内容不物理删除）。
+       */
+      const da = sortDist(sa), db = sortDist(sb);
+      if (da !== db) {
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return da - db;
+      }
       return this.timeDecay(b.publishedAt) - this.timeDecay(a.publishedAt);
     });
   },

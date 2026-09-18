@@ -354,6 +354,7 @@
 
 <script src="../assets/data/mock.js"></script>
 <script src="../assets/js/api.js"></script>
+<script src="../assets/js/user-loc.js"></script>
 <script>
 let shop = null;
 
@@ -365,14 +366,34 @@ let shop = null;
 
   render();
   bindSlide();
+
+  // 定位回来后刷新距离 —— 首次渲染时可能还没拿到用户坐标
+  if (window.UserLoc) {
+    UserLoc.onChange(() => {
+      const el = document.getElementById('shopDist');
+      if (el) el.textContent = shopDistanceText();
+    });
+    UserLoc.locate();
+  }
 })();
+
+/**
+ * 距离文案。
+ * ⚠️ 与 feed.html 同口径：有用户位置就现算，否则用平台存的权威值。
+ *    两处不一致 = 首页显示 2.3km、点进来变 5.1km，用户会认为数据是假的。
+ */
+function shopDistanceText() {
+  const km = window.UserLoc ? UserLoc.shopKm(shop) : shop.distance;
+  if (km == null) return '距离未知';
+  return km + 'km' + (window.UserLoc && UserLoc.state().isUser ? ' · 距你' : '');
+}
 
 function render() {
   document.getElementById('heroImg').src = shop.cover;
   document.getElementById('shopLogo').src = shop.logo;
   document.getElementById('shopName').textContent = shop.name;
   document.getElementById('shopCuisine').textContent = shop.cuisine;
-  document.getElementById('shopDist').textContent = shop.distance + 'km';
+  document.getElementById('shopDist').textContent = shopDistanceText();
   document.getElementById('shopHours').textContent = shop.hours;
   document.getElementById('shopIntro').textContent = shop.intro;
 

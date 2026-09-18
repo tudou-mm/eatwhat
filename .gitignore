@@ -15,6 +15,14 @@ application-prod.yml
 assets/data/amap-key.js
 amap-key.js
 
+# ---------- ⚠️ 发布沙箱的排除清单（.gitignore 管不住它） ----------
+# 发布工具只按它自己的规则排除 node_modules/.git/构建产物，
+# **不读 .gitignore** → gitignored 的敏感文件照样会被打包上传。
+# 想让某个文件不上线，必须显式禁止发布目录（见 .publishignore 说明）：
+#   · 发布前把敏感文件移出发布目录，或只发一个干净的子目录
+#   · 绝不要把仓库根整个当发布目录
+.wbapp_*.genie
+
 # ---------- Java / Maven ----------
 server/target/
 *.class
@@ -54,6 +62,8 @@ logs/
 .shots-flow/
 .shots-v2/
 .shots-mappicker/
+.shots-loc/
+.shots-host/
 .dev.log
 
 # ---------- 数据库本地文件 ----------

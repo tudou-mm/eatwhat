@@ -40,8 +40,42 @@
   else if (qs.get('api') === '0') localStorage.removeItem('useApi');
   if (qs.get('apiBase')) localStorage.setItem('apiBase', qs.get('apiBase'));
 
-  var API_BASE = localStorage.getItem('apiBase') || 'http://localhost:8080/api';
+  var API_BASE = localStorage.getItem('apiBase') || defaultApiBase();
   var enabled = localStorage.getItem('useApi') === '1';
+
+  /**
+   * 默认的接口地址。
+   *
+   * 分四种情况（v1.9 起后端也会托管前端页面，所以多了第 ② 种）：
+   *
+   *   ① 页面从 5173（dev.py 起的静态服务）打开 → 后端在 8080 → 跨域调它
+   *   ② 页面**就是后端发的**（同一个 origin）→ 用相对路径 `/api`
+   *   ③ `file://` 直开 → 退回 localhost，跟改造前行为一致
+   *   ④ 拿不到 `location.port`（非浏览器宿主、单元测试沙箱）→ 退回 localhost
+   *
+   * ⚠️ ② 必须用相对路径，**不能写死 `http://localhost:8080`**：
+   * 手机上的 `localhost` 指的是**手机自己**，写死了手机上就永远连不上。
+   * 而且同源请求天然没有跨域，CORS 那一套整个用不上 —— 这是「一个地址
+   * 搞定」最大的收益。
+   *
+   * ⚠️ ③④ 不能漏，两者都会出现「端口读不到」：
+   *   · `file://` 下 `location.port` 是空字符串
+   *   · Node 沙箱（`test_adapter.cjs`）的 `location` 只是个 `{search, href}` 替身
+   * 若一律返回 `/api`，它们会去请求 `file:///api/...` 或干脆连不上，
+   * 报一个看不懂的错误。**默认值要偏向「能用」而不是「正确」** ——
+   * 因为「端口是 5173」这个判断只在真的浏览器里才成立。
+   */
+  function defaultApiBase() {
+    var loc = (typeof location !== 'undefined' && location) || {};
+    // ① 端口明确是 5173 → 分离部署，后端在 8080
+    if (String(loc.port || '') === '5173') return 'http://localhost:8080/api';
+    // ③ file:// 直开
+    if (loc.protocol === 'file:') return 'http://localhost:8080/api';
+    // ④ 端口读不到（沙箱/非浏览器）→ 退回 localhost，别赌同源
+    if (!loc.port) return 'http://localhost:8080/api';
+    // ② 其余情况 = 页面由后端发出 → 同源相对路径
+    return '/api';
+  }
 
   // ---------- 端识别 ----------
   // 同一份 api.js 被三个端引用，要拉的数据不一样：
@@ -413,6 +447,39 @@
     });
   }
 
+  /**
+   * 把缓存里的「活数据」镜像回 `window.MOCK`。
+   *
+   * ⚠️⚠️ **这是本适配层最容易漏、后果最隐蔽的一条。**
+   *
+   * 页面代码有两类读法，**都必须拿到同一份数据**：
+   *
+   *   ① `MOCK.getShop(id)`  → 被本层覆写，走 `cache.shops`
+   *   ② `MOCK.shops` / `MOCK.buildFeed()` 等**直接读数组**的路径
+   *      —— 而 `mock.js` 内部的比较器用的是 `this.shops`，
+   *         完全绕过了被覆写的 `getShop`
+   *
+   * 如果只做 ① 不同步 ②，就会出现**同一个店 id 有两个不同距离**：
+   * `cache.shops` 里是后端算好的 0.9km，`MOCK.shops` 里还是种子数据的 2.3km。
+   * 排序器读前者、卡片显示读后者时，列表看起来就是「乱序」的，
+   * 但**两个值各自都"没错"** —— 极难查（本项目为此排查了两轮）。
+   *
+   * 所以任何时候只要 `cache` 变了，就必须调这个函数把它推回 MOCK，
+   * **保持「数据只有一份」**。
+   */
+  function hydrateMock() {
+    var M = window.MOCK;
+    if (!M) return;
+    // 用同一个数组引用，而不是复制 —— 复制会立刻产生第二个真相源
+    if (cache.shops.length || !cache.loaded) M.shops = cache.shops;
+    if (cache.dishes.length) M.dishes = cache.dishes;
+    if (cache.comments.length) M.comments = cache.comments;
+    if (cache.priceTiers.length) M.priceTiers = cache.priceTiers;
+    if (cache.tasteTags.length) M.tasteTags = cache.tasteTags;
+    if (cache.cuisines.length) M.cuisines = cache.cuisines;
+    if (cache.publishRule) M.publishRule = cache.publishRule;
+  }
+
   /** 把配置（价格档 / 口味 / 菜系 / 全局发布规则）灌进内存与 MOCK */
   function applyConfig(cfg) {
     cfg = cfg || {};
@@ -436,10 +503,7 @@
     cache.comments = d.comments || [];
     applyConfig(d.config);
 
-    if (!window.MOCK) return;
-    window.MOCK.shops = cache.shops;
-    window.MOCK.dishes = cache.dishes;
-    window.MOCK.comments = cache.comments;
+    hydrateMock();
   }
 
   /**
@@ -739,11 +803,30 @@
    * 审核后写入的审核人和时间）。本地猜的结果会和真实结果越走越偏。
    */
 
-  /** 用最新对象替换数组里的同 id 项；找不到就 push */
+  /**
+   * 用最新数据更新数组里的同 id 项；找不到就 push。
+   *
+   * ⚠️ 必须是**就地合并字段**，不能写 `list[i] = item`。
+   *
+   * 整体换引用会造成「同一个 id 有两个对象」：持有旧引用的地方
+   * （比如排序器刚取到的 `shop`、某个闭包里的变量）看到的还是旧数据，
+   * 而新数组里已经换了 —— 表现为「同一家店两个距离 / 两个权重」，
+   * 且**两边各自都自洽**，极难定位。
+   *
+   * 另外服务端返回的常是**精简视图**（可能不含 lat/lng），
+   * 直接替换会把坐标弄丢，距离随之算不出来。
+   * 就地合并天然规避了这一点：没返回的字段保持原值。
+   */
   function upsert(list, item) {
     if (!list || !item || !item.id) return;
     for (var i = 0; i < list.length; i++) {
-      if (list[i].id === item.id) { list[i] = item; return; }
+      if (list[i].id === item.id) {
+        var target = list[i];
+        if (target !== item) {
+          Object.keys(item).forEach(function (k) { target[k] = item[k]; });
+        }
+        return;
+      }
     }
     list.push(item);
   }
@@ -943,7 +1026,12 @@
         if (p.dailyLimit != null) s.dailyLimit = p.dailyLimit;
         return true;
       },
-      apply: function (data) { upsert(cache.shops, data); upsert(window.MOCK.shops, data); }
+      apply: function (data) {
+        // MOCK.shops 与 cache.shops 是**同一个数组引用**（见 hydrateMock），
+        // 所以这里只需 upsert 一次 —— 写两遍等于对同一个数组做两次，纯属多余。
+        upsert(cache.shops, data);
+        hydrateMock();
+      }
     },
 
     'shop.pinned': {
@@ -955,7 +1043,12 @@
         s.pinned = !!p.pinned;
         return true;
       },
-      apply: function (data) { upsert(cache.shops, data); upsert(window.MOCK.shops, data); }
+      apply: function (data) {
+        // MOCK.shops 与 cache.shops 是**同一个数组引用**（见 hydrateMock），
+        // 所以这里只需 upsert 一次 —— 写两遍等于对同一个数组做两次，纯属多余。
+        upsert(cache.shops, data);
+        hydrateMock();
+      }
     },
 
     'shop.weight': {
@@ -967,7 +1060,12 @@
         s.weight = p.weight;
         return true;
       },
-      apply: function (data) { upsert(cache.shops, data); upsert(window.MOCK.shops, data); }
+      apply: function (data) {
+        // MOCK.shops 与 cache.shops 是**同一个数组引用**（见 hydrateMock），
+        // 所以这里只需 upsert 一次 —— 写两遍等于对同一个数组做两次，纯属多余。
+        upsert(cache.shops, data);
+        hydrateMock();
+      }
     },
 
     // 拖拽排序：本地按顺序写回权重，与后端 applyOrder 的口径一致 —— 后一项权重依次递减
@@ -983,10 +1081,32 @@
         return true;
       },
       apply: function (data) {
-        if (Array.isArray(data)) {
-          cache.shops = data;
-          window.MOCK.shops = data;
-        }
+        if (!Array.isArray(data)) return;
+        /*
+         * ⚠️ 这里**不能**写 `cache.shops = data; MOCK.shops = data;`。
+         *
+         * 后端返回的只是「排序后的店铺列表」，直接拿它替换数组会同时造成两件事：
+         *   ① 若它是个**精简视图**（少了 lat/lng 等字段），
+         *      `MOCK.shops` 里的店就丢了坐标 → 距离算不出来 → 列表顺序全乱
+         *   ② 它成了**第三个数组对象**，与 cache 里原有的店对象不再同一个引用，
+         *      后续对某一家店的修改只会落在其中一个上
+         *
+         * 正确做法：数据仍然以 cache 为准，只按服务端给的顺序**重排**，
+         * 并用它返回的字段把已有对象补齐（就地更新，保住引用）。
+         */
+        var seq = {};
+        data.forEach(function (s, i) { if (s && s.id) seq[s.id] = i; });
+        cache.shops.sort(function (a, b) {
+          var ia = seq[a.id] == null ? 1e9 : seq[a.id];
+          var ib = seq[b.id] == null ? 1e9 : seq[b.id];
+          return ia - ib;
+        });
+        // 服务端返回的字段覆盖回来（权重等），对象引用保持不变
+        data.forEach(function (s) {
+          if (!s || !s.id) return;
+          var mine = findShop(s.id);
+          if (mine && mine !== s) Object.keys(s).forEach(function (k) { mine[k] = s[k]; });
+        });
       }
     },
 
@@ -1270,9 +1390,31 @@
         return true;
       },
       apply: function (data) {
+        /*
+         * ⚠️ 这里**不能**写 `cache.shops = [data]; MOCK.shops = cache.shops;`。
+         *
+         * 这是商家端「我这一家店」的口径，但 `MOCK.shops` 是**全局店铺池**。
+         * 把池子整个换掉会连锁出事：
+         *   · 商家端 `MOCK.buildFeed()` 之类的跨店逻辑瞬间只剩 1 家店
+         *   · 若之后有人在同一浏览器里切到客户端，池子已被污染
+         *     （客户端同源、共享 localStorage 与 MOCK）
+         *   · 并且新数组与 cache 里原有对象**不再是同一引用**，
+         *     后续改这家的字段会漏改另一个
+         *
+         * 正确做法：就地更新 cache 里的那一家，MOCK.shops 交给 hydrateMock 同步。
+         */
         cache.me = data;
-        cache.shops = [data];
-        if (window.MOCK) window.MOCK.shops = cache.shops;
+        var cur = findShop(data && data.id);
+        if (cur && cur !== data) {
+          Object.keys(data).forEach(function (k) { cur[k] = data[k]; });
+          cache.me = cur;
+        } else if (!cur && data) {
+          cache.shops.push(data);
+          cache.me = data;
+        }
+        // 商家端页面读的是「我这一家」，所以 cache.shops 仍然只放它一个 ——
+        // 但 MOCK.shops 保持全局池，由 hydrateMock 负责镜像
+        if (cache.me) cache.shops = [cache.me];
       }
     },
 
@@ -1394,7 +1536,12 @@
         s.status = status;
         return true;
       },
-      apply: function (data) { upsert(cache.shops, data); upsert(window.MOCK.shops, data); }
+      apply: function (data) {
+        // MOCK.shops 与 cache.shops 是**同一个数组引用**（见 hydrateMock），
+        // 所以这里只需 upsert 一次 —— 写两遍等于对同一个数组做两次，纯属多余。
+        upsert(cache.shops, data);
+        hydrateMock();
+      }
     };
   }
 

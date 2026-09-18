@@ -339,6 +339,7 @@
 
 <script src="../assets/data/mock.js"></script>
 <script src="../assets/js/api.js"></script>
+<script src="../assets/js/user-loc.js"></script>
 <script>
 let dish = null;
 let shop = null;
@@ -353,7 +354,24 @@ let replyTo = null;
   // 进详情页即记一次浏览（首页的「随心看」排除、个人中心的浏览记录都读它）
   MOCK.addBrowsed(dish.id);
   render();
+
+  // 定位回来后刷新距离文案（与首页同口径，避免两处数字打架）
+  if (window.UserLoc) {
+    UserLoc.onChange(() => {
+      const el = document.getElementById('smMeta');
+      if (el && shop) el.textContent =
+        `${shop.cuisine} · ${shopDistanceText()} · ${shop.hours}`;
+    });
+    UserLoc.locate();
+  }
 })();
+
+/** 与 feed/shop 页同口径：有用户位置就现算，否则用平台权威值 */
+function shopDistanceText() {
+  const km = window.UserLoc ? UserLoc.shopKm(shop) : (shop && shop.distance);
+  if (km == null) return '距离未知';
+  return km + 'km';
+}
 
 function render() {
   // 媒体
@@ -398,7 +416,8 @@ function render() {
   // 店铺
   document.getElementById('smLogo').src = shop.logo;
   document.getElementById('smName').textContent = shop.name;
-  document.getElementById('smMeta').textContent = `${shop.cuisine} · ${shop.distance}km · ${shop.hours}`;
+  document.getElementById('smMeta').textContent =
+    `${shop.cuisine} · ${shopDistanceText()} · ${shop.hours}`;
 
   // 互动数 + 我是否点过（从统一的本地存储读，翻页回来仍然亮着）
   document.getElementById('likeNum').textContent = MOCK.fmtNum(dish.stats.likes);

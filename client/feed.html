@@ -93,6 +93,48 @@
   }
   .filter-bar.is-on { display: flex; }
 
+  /* 定位状态条（只作用于「附近」Tab） */
+  .loc-bar {
+    position: absolute; top: 86px; left: 16px; right: 16px; z-index: 48;
+    display: none; align-items: center; gap: 8px;
+    padding: 7px 10px 7px 12px; border-radius: 18px;
+    background: rgba(0,0,0,.5); backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,.14);
+    font-size: 12px; color: #fff; cursor: pointer;
+  }
+  .loc-bar.is-on { display: flex; }
+  /* 定位条和筛选条同时出现时，把定位条上移，别叠在一起 */
+  .loc-bar.has-filter { top: 128px; }
+
+  .loc-bar__dot {
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+    background: #25F4EE; box-shadow: 0 0 6px rgba(37,244,238,.9);
+  }
+  /* 退到市中心 / 定位不准时用黄色，提示「这不是你的真实位置」 */
+  .loc-bar__dot.is-approx { background: #FFC53D; box-shadow: 0 0 6px rgba(255,197,61,.9); }
+
+  .loc-bar__text {
+    flex: 1; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+    color: rgba(255,255,255,.86);
+  }
+
+  .loc-bar__act {
+    flex-shrink: 0; padding: 3px 10px; border-radius: 10px;
+    background: rgba(255,255,255,.14); font-size: 11px;
+    transition: background .15s;
+  }
+  .loc-bar__act:hover { background: rgba(255,255,255,.26); }
+
+  /* 轻提示（定位反馈用） */
+  .toast {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: rgba(0,0,0,.85); color: #fff; padding: 10px 18px;
+    border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .25s;
+    pointer-events: none; z-index: 150; white-space: nowrap;
+  }
+  .toast.is-show { opacity: 1; }
+
   .filter-bar__dot {
     width: 6px; height: 6px; border-radius: 50%; background: #FE2C55;
     flex-shrink: 0; box-shadow: 0 0 6px rgba(254,44,85,.9);
@@ -401,6 +443,17 @@
 
       <div class="filter-btn" id="filterBtn" onclick="location.href='filter.html'">⚙</div>
 
+      <!--
+        定位状态条：只在「附近」Tab 显示。
+        ⚠️ 必须让用户看出距离是相对什么算的 —— 否则数字看着像在骗人。
+        点了可以手动重新定位 / 换成市中心基准。
+      -->
+      <div class="loc-bar" id="locBar" onclick="onLocTap()">
+        <span class="loc-bar__dot" id="locDot"></span>
+        <span class="loc-bar__text" id="locText">正在获取位置…</span>
+        <span class="loc-bar__act" id="locAct">重新定位</span>
+      </div>
+
       <!-- 筛选状态条：只在筛选生效时显示 -->
       <div class="filter-bar" id="filterBar">
         <span class="filter-bar__dot"></span>
@@ -410,6 +463,8 @@
 
       <!-- 信息流 -->
       <div class="feed" id="feed"></div>
+
+      <div class="toast" id="toast"></div>
 
       <!-- 店铺卡片 -->
       <div class="shop-card" id="shopCard">
@@ -482,6 +537,7 @@
 
 <script src="../assets/data/mock.js"></script>
 <script src="../assets/js/api.js"></script>
+<script src="../assets/js/user-loc.js"></script>
 <script>
 const S = {
   tab: 'nearby',
@@ -489,7 +545,7 @@ const S = {
   current: null,
   /*
    * 两个 Tab 各自的滚动位置。
-   * 来回切 Tab 时若每次都跳回第一条，用户会觉得「我刚才看的菜去哪了」——
+   * 来回切 Tab 时若每次都跳回最新，用户会觉得「我刚才看的菜去哪了」——
    * 尤其「随心看」是随机序，重排后连位置都找不回来。
    */
   scroll: { nearby: 0, random: 0 },
@@ -500,7 +556,81 @@ const S = {
 (function init() {
   updateFilterUI();
   buildFeed();
+  initLoc();
 })();
+
+/* ---------- 定位 ---------- */
+
+/**
+ * 启动定位，并在结果回来后**重排信息流**。
+ *
+ * ⚠️ 顺序很重要：先 buildFeed 再定位。定位是异步的，等它回来才渲染
+ *    会让首屏白一下；而且定位失败（很常见）时也必须能正常看内容。
+ *    所以策略是「先按市中心渲染，拿到真坐标再就地刷新」。
+ */
+function initLoc() {
+  if (!window.UserLoc) return;      // 单文件打开等异常场景，静默跳过
+
+  UserLoc.onChange(() => {
+    updateLocUI();
+    // 只有「附近」Tab 的顺序跟距离有关，其余 Tab 不必重排
+    if (S.tab === 'nearby') {
+      S.scroll.nearby = document.getElementById('feed').scrollTop;
+      buildFeed();
+    }
+  });
+
+  updateLocUI();
+  // 不 await：定位可能要几秒，界面先出来
+  UserLoc.locate();
+}
+
+function updateLocUI() {
+  const bar = document.getElementById('locBar');
+  if (!bar || !window.UserLoc) return;
+
+  const s = UserLoc.state();
+  const on = S.tab === 'nearby';
+  bar.classList.toggle('is-on', on);
+  // 筛选条也在时错开位置，两条别叠一起
+  bar.classList.toggle('has-filter', MOCK.filterActive());
+
+  if (!on) return;
+
+  const approx = !s.isUser;
+  document.getElementById('locDot').classList.toggle('is-approx', approx);
+
+  let text;
+  if (s.src === 'gps') text = '已定位 · 距离按你的位置计算';
+  else if (s.src === 'manual') text = s.reason || '已切换位置';
+  else if (s.src === 'cache') text = s.stale ? s.reason : '按最近一次定位计算';
+  else if (s.src === 'city') text = s.reason || '距离以市中心为基准';
+  else text = '正在获取位置…';
+
+  // 非安全上下文是最常见的一种失败，值得单独说清楚
+  if (s.src === 'city' && !window.isSecureContext &&
+      ['localhost', '127.0.0.1'].indexOf(location.hostname) < 0) {
+    text = '当前是 http 访问，浏览器禁止定位（需 https）';
+  }
+
+  document.getElementById('locText').textContent = text;
+  document.getElementById('locAct').textContent = approx ? '重新定位' : '刷新';
+}
+
+/** 点定位条：未定位成功就重试，已成功就提示当前基准 */
+function onLocTap() {
+  if (!window.UserLoc) return;
+  const s = UserLoc.state();
+  if (s.src === 'gps' || s.src === 'manual') {
+    toast(s.src === 'gps' ? '正在使用你的实时位置' : (s.reason || '已切换位置'));
+    return;
+  }
+  document.getElementById('locText').textContent = '正在重新定位…';
+  UserLoc.locate({ force: true }).then(() => {
+    const n = UserLoc.state();
+    toast(n.isUser ? '定位成功，距离已按你的位置重算' : (n.reason || '定位失败'));
+  });
+}
 
 /* ---------- 筛选状态 ---------- */
 
@@ -554,6 +684,23 @@ function buildFeed() {
 
   S.feed = list;
   renderFeed();
+}
+
+/*
+ * 「附近」的距离基准 —— 有定位就用用户真实位置，没有就退市中心。
+ *
+ * ⚠️ 距离显示必须与排序基准一致，否则用户会看到「2.3km 的排在 5.1km 后面」
+ *    这种明显矛盾（历史上真的发生过：列表按 shop.distance 排、卡片却显示
+ *    另算的值）。所以这里让两者都走 UserLoc 一个来源。
+ */
+function feedDistance(d) {
+  const shop = MOCK.getShop(d.shopId);
+  if (!shop) return null;
+  return UserLoc.shopKm(shop);
+}
+
+function locLabel() {
+  return window.UserLoc ? UserLoc.label() : '距市中心';
 }
 
 function renderFeed() {
@@ -611,7 +758,7 @@ function renderFeed() {
             <div class="fc__shop-avatar"><img src="${shop ? shop.logo : ''}"></div>
             <span>${d.shopName}</span>
             <span>·</span>
-            <span>${shop ? shop.distance + 'km' : ''}</span>
+            <span>${feedDistance(d) != null ? feedDistance(d) + 'km' : ''}</span>
             ${tier ? `<span class="fc__price">${tier.name}</span>` : ''}
             <span style="opacity:.7">▸</span>
           </div>
@@ -670,6 +817,7 @@ function switchTab(tab) {
   });
   closeShopCard();
   buildFeed();
+  updateLocUI();      // 定位条只在「附近」显示
 
   // 回到这个 Tab 上次的位置
   const top = S.scroll[tab] || 0;
@@ -760,7 +908,7 @@ function openShopCard(shopId) {
   document.getElementById('scLogo').src = shop.logo;
   document.getElementById('scName').textContent = shop.name;
   document.getElementById('scMeta').innerHTML =
-    `🕐 ${shop.hours}　·　${shop.cuisine}<br>📍 ${shop.address}　·　${shop.distance}km`;
+    `🕐 ${shop.hours}　·　${shop.cuisine}<br>📍 ${shop.address}　·　${feedDistance({ shopId: shop.id })}km`;
   document.getElementById('scEnter').href = 'shop.html?id=' + shop.id;
   S.currentShop = shop;
   document.getElementById('shopCard').classList.add('is-open');
@@ -784,6 +932,17 @@ function navShop() {
 /* ---------- 埋点占位（二期换真实实现） ---------- */
 function track(event, data) {
   console.log('[track]', event, data);
+}
+
+/* 轻提示：定位结果反馈用（与 shop/dish 页同款） */
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('is-show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-show'), 1800);
 }
 </script>
 </body>
